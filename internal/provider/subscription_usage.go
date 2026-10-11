@@ -602,8 +602,8 @@ func claudeReadAt(user string) *time.Time {
 }
 
 // claudeUsage keeps each Claude account's allowance as Claude Code last
-// told it: its /usage, run when the user asks (AskClaudeUsage) and only for
-// the account it is signed in to, or what it said as it answered
+// told it: its /usage, run when the user asks (AskClaudeUsage, Asked), or
+// what it said as it answered
 // (NoteClaudeLimits). magpie never asks Anthropic for it itself; the Usage
 // page's timer, the switch list and routing show what is kept here.
 var claudeUsage struct {
@@ -714,11 +714,10 @@ func AskUsage() {
 	l.Unlock()
 }
 
-// claudeWindows is the allowance of the Claude account user. Only the
-// account Claude Code is signed in to (active) is read, by Claude Code's
-// own /usage: when the user asked since it last was, or when the last
-// reading's claudeUsageWait is up and Claude Code was used since; any other
-// time it is what was kept.
+// claudeWindows is the allowance of the Claude account user, read by
+// Claude Code's /usage. A saved account is read only when explicitly
+// asked, in its own config directory. The active account is also read
+// when claudeUsageWait is up and Claude Code was used since.
 // magpie itself never asks Anthropic.
 func claudeWindows(ctx context.Context, user string, active bool) ([]QuotaWindow, error) {
 	key := strings.ToLower(user)
@@ -728,10 +727,10 @@ func claudeWindows(ctx context.Context, user string, active bool) ([]QuotaWindow
 	c.Lock()
 	e, ok := c.m[key]
 	c.Unlock()
-	due := e.tried.IsZero() || asked > e.tried.UnixNano() ||
+	due := e.tried.IsZero() || wasAsked(ctx) || asked > e.tried.UnixNano() ||
 		active && now.Sub(e.tried) >= e.wait && (e.heard.After(e.tried) || claudeUsedSince(e.tried))
 	// nor, with allowances read only when asked, one nobody asked for
-	read := active && due && now.Sub(e.tried) >= claudeAskFloor && !holding(ctx)
+	read := (active || wasAsked(ctx)) && due && now.Sub(e.tried) >= claudeAskFloor && !holding(ctx)
 	c.Lock()
 	// one reading an ask or a wait, its first caller's; the others keep
 	// to it
@@ -769,11 +768,19 @@ func claudeWindows(ctx context.Context, user string, active bool) ([]QuotaWindow
 		}
 		return []QuotaWindow{}, errClaudeNotAsked
 	}
-	if ClaudeCodeMovedOff(user) {
+	if active && ClaudeCodeMovedOff(user) {
 		return kept()
 	}
-	ws, err := readClaudeUsage(ctx)
-	if ClaudeCodeMovedOff(user) {
+	var dir string
+	var ws []QuotaWindow
+	var err error
+	if !active {
+		dir, err = claudeSavedDir(user)
+	}
+	if err == nil {
+		ws, err = readClaudeUsage(ctx, dir)
+	}
+	if active && ClaudeCodeMovedOff(user) {
 		return kept()
 	}
 	if err != nil {
@@ -810,7 +817,7 @@ func claudeWindows(ctx context.Context, user string, active bool) ([]QuotaWindow
 
 var (
 	errClaudeNotAsked = errors.New("not read yet: magpie reads Claude's usage by running Claude Code's /usage")
-	errClaudeSaved    = errors.New("magpie doesn't read a saved account's usage; it shows what Claude Code reports while using it")
+	errClaudeSaved    = errors.New("not read yet: refresh this card to read the saved account's usage with Claude Code")
 )
 
 // elapsed is ws as of now: a window that has reset since it was read
