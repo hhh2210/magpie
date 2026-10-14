@@ -14385,6 +14385,9 @@ function loadQuotas(asked, again) {
       // was read before stays, as it does when the read is refused
       if (q != null && !Array.isArray(q)) { quotas = quotas || []; reading = false; return; }
       q = keepRefreshedQuotas(q || [], began);
+      // Whole-page reads are serialized; no older one still needs these
+      // markers. A card reply must not retire them while a GET is pending.
+      for (const [key, version] of quotaRefreshVersions) if (version <= began) quotaRefreshVersions.delete(key);
       same =!!again && !!quotas && JSON.stringify(q || []) === JSON.stringify(quotas) && (!h || JSON.stringify(h) === JSON.stringify(quotaHist));
       quotas = q || []; quotasAt = Date.now(); if (h) quotaHist = h;
     }, () => { quotas = quotas || []; reading = false; })
@@ -14403,12 +14406,13 @@ function loadQuotas(asked, again) {
 // completed. Keep each card refreshed since this read began, including a
 // card the older reply did not yet contain. A later read may replace it.
 function keepRefreshedQuotas(next, began) {
-  for (const [key, version] of quotaRefreshVersions) if (version <= began) quotaRefreshVersions.delete(key);
-  const kept = new Map((quotas || []).filter(q => quotaRefreshVersions.has(usageAcctKey(q))).map(q => [usageAcctKey(q), q]));
-  const out = next.map(q => {
+  const kept = new Map((quotas || []).filter(q => quotaRefreshVersions.get(usageAcctKey(q)) > began).map(q => [usageAcctKey(q), q]));
+  const out = next.flatMap(q => {
     const key = usageAcctKey(q), newer = kept.get(key);
     kept.delete(key);
-    return newer || q;
+    // A protected key with no current card was removed or replaced by a
+    // newly named account. An older response cannot bring it back.
+    return newer ? [newer] : quotaRefreshVersions.get(key) > began ? [] : [q];
   });
   return out.concat([...kept.values()]);
 }
@@ -17119,6 +17123,7 @@ function quotaRefresh(q) {
     if (quotaRefreshing.has(key)) return;
     quotaRefreshing.add(key);
     b.classList.add("busy");
+    const began = quotaRefreshVersion;
     try {
       const qs = await api("usage/quotas/refresh?provider=" + encodeURIComponent(q.provider) + (q.user ? "&user=" + encodeURIComponent(q.user) : ""), {});
       const fresh = Array.isArray(qs) && qs.find(x => usageAcctKey(x) === key);
@@ -17130,9 +17135,21 @@ function quotaRefresh(q) {
         quotas = kept.some(x => usageAcctKey(x) === key) ? kept.map(x => usageAcctKey(x) === key ? fresh : x) : [...kept, fresh];
         quotasAt = Date.now();
       } else if (Array.isArray(qs)) {
-        // The card came back under another key (an account first read
-        // under its name): the reply's list is taken as it was before.
-        quotas = qs; quotasAt = Date.now();
+        // The account was first named by this read. Replace its provider's
+        // cards, preserving other providers and newer completed refreshes.
+        const belongs = x => x.provider === q.provider || q.from && x.provider.startsWith(q.provider + "/");
+        const before = quotas || [], replacement = qs.filter(belongs), next = [];
+        let placed = false;
+        for (const x of before) {
+          if (!belongs(x)) next.push(x);
+          else if (!placed) { next.push(...replacement); placed = true; }
+        }
+        if (!placed) next.push(...replacement);
+        quotas = keepRefreshedQuotas(next, began); quotasAt = Date.now();
+        // Protect the new identities and the old keys they replaced, so a
+        // pending GET can neither erase the new cards nor restore the old.
+        const version = ++quotaRefreshVersion;
+        for (const x of [q, ...before, ...quotas]) if (belongs(x)) quotaRefreshVersions.set(usageAcctKey(x), version);
       }
     } catch (err) {
       status(err.message, "err");

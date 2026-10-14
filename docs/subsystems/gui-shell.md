@@ -40,6 +40,13 @@ card list. A whole-page read begun before that refresh completed keeps
 the newer card when its older response arrives; other cards still update,
 and a later whole-page read can replace or remove the card. This also
 keeps two different card refreshes from undoing each other's results.
+If a refresh first supplies the account's name, its provider's cards are
+replaced while newer card refreshes and other providers stay. The replaced
+keys are protected too: an older whole-page response cannot restore an
+unnamed card or erase its newly named replacement. Only a completed
+whole-page read retires the ordering markers it no longer needs.
+A remote magpie's summary can likewise become its namespaced child cards;
+refreshing it preserves local providers and other remote magpies.
 `keepRefreshedQuotas` and `quotaRefresh` in
 [`app.js`](../../internal/gui/assets/app.js) own this publication order;
 `quota-refresh-order.test.cjs` covers held responses and failures, and

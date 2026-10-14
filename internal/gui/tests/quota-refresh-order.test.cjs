@@ -98,3 +98,53 @@ test("a card that comes back under another key still shows the reply", async () 
   p.answer(0, [card("a@x.com", 32)]); await refresh;
   assert.deepEqual(plain(p.cards()).map(q => [q.user, q.windows[0].used]), [["a@x.com", 32]], "the refreshed card's reply was dropped");
 });
+
+test("an account first named by refresh survives an older whole-page reply", async () => {
+  const p = page(), unnamed = card("", 0);
+  p.seed([unnamed]);
+  const loading = p.load(); await tick();
+  const refresh = p.refresh(unnamed);
+  p.answer(1, [card("a@x.com", 32)]); await refresh;
+  p.answer(0, [unnamed]); await loading;
+  assert.deepEqual(plain(p.cards()).map(q => [q.user, q.windows[0].used]), [["a@x.com", 32]], "an old reply restored the unnamed card over its refresh");
+});
+
+test("an account first named by refresh keeps another card's completed refresh", async () => {
+  const p = page(), unnamed = card("", 0), b = card("b@x.com", 0);
+  p.seed([unnamed,b]);
+  const first = p.refresh(unnamed), second = p.refresh(b);
+  p.answer(1,[unnamed,card("b@x.com",61)]); await second;
+  p.answer(0,[card("a@x.com",32),b]); await first;
+  assert.deepEqual(plain(p.cards()).map(q => [q.user,q.windows[0].used]), [["a@x.com",32],["b@x.com",61]], "the renamed card's reply undid another card's completed refresh");
+});
+
+test("a renamed card cannot retire another provider's protection against a pending GET", async () => {
+  const p = page(), unnamed = card("", 0), b = { ...card("b@x.com", 0), provider: "codex" };
+  const freshB = { ...card("b@x.com", 61), provider: "codex" };
+  p.seed([unnamed, b]);
+  const loading = p.load(); await tick();
+  const second = p.refresh(b);
+  p.answer(1, [unnamed, freshB]); await second;
+  const first = p.refresh(unnamed);
+  p.answer(2, [card("a@x.com", 32), b]); await first;
+  const readings = () => Object.fromEntries(plain(p.cards()).map(q => [q.user, q.windows[0].used]));
+  assert.deepEqual(readings(), { "a@x.com": 32, "b@x.com": 61 }, "the provider refresh replaced another provider's newer card");
+  p.answer(0, [unnamed, b]); await loading;
+  assert.deepEqual(readings(), { "a@x.com": 32, "b@x.com": 61 }, "the card reply retired protection needed by the older GET");
+});
+
+test("a remote summary becomes its child cards without undoing a local refresh", async () => {
+  const p = page(), summary = { ...card("", 0), provider: "home", from: "Home" };
+  const child = { ...card("a@x.com", 32), provider: "home/claude", from: "Home" };
+  const local = { ...card("b@x.com", 0), provider: "codex" };
+  const freshLocal = { ...local, windows: [{ name: "7 days", used: 61 }] };
+  p.seed([summary, local]);
+  const loading = p.load(); await tick();
+  const remote = p.refresh(summary), own = p.refresh(local);
+  p.answer(2, [summary, freshLocal]); await own;
+  p.answer(1, [child, local]); await remote;
+  const readings = () => Object.fromEntries(plain(p.cards()).map(q => [q.provider, q.windows[0].used]));
+  assert.deepEqual(readings(), { "home/claude": 32, codex: 61 });
+  p.answer(0, [summary, local]); await loading;
+  assert.deepEqual(readings(), { "home/claude": 32, codex: 61 }, "the late GET restored the remote summary or an old local reading");
+});

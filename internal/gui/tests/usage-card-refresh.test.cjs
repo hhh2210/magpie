@@ -53,6 +53,7 @@ function serve(lang, state) {
       if (q?.windows?.length) { q.windows[0].used = 61; q.readAt = iso(Date.now()); }
       if (q?.error) { delete q.error; q.windows = [{ name: "Week", used: 10 }]; q.readAt = iso(Date.now()); }
       if (q) { delete q.asOf; delete q.readDeferred; }
+      if (q && state.nameOnRefresh && !q.user) q.user = "a@x.com";
       return json(state.quotas);
     }
     if (url.pathname === "/api/usage/quotas/history") return json([]);
@@ -75,14 +76,15 @@ const deferredWords = {
 };
 for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
   for (const lang of Object.keys(deferredWords)) {
-    test(`${engine} ${lang}: a deferred card is not a failure, and a late background reply cannot undo its refresh`, async (t) => {
+    for (const named of [true, false]) test(`${engine} ${lang}: a deferred ${named ? "named" : "unnamed"} card is not a failure, and a late background reply cannot undo its refresh`, async (t) => {
       const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
       t.after(() => browser.close());
       const page = await browser.newPage({ viewport: { width: 900, height: 700 }, reducedMotion: "reduce" });
       page.setDefaultTimeout(5000);
       const errors = [];
       page.on("pageerror", e => errors.push(e.message));
-      const state = { quotas: fixtures(Date.now()), gets: 0, refreshes: [] };
+      const state = { quotas: fixtures(Date.now()), gets: 0, refreshes: [], nameOnRefresh: !named };
+      if (!named) state.quotas[0].user = "";
       state.quotas[0].asOf = state.quotas[0].readAt;
       state.quotas[0].readDeferred = true;
       await page.route("**/*", serve(lang, state));
@@ -107,7 +109,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.evaluate(() => quotasLoading);
       assert.match(await claude.locator(".quota-n").textContent(), /61%/, "an older reply undid the click");
       assert.equal(await read.evaluate(e => e.classList.contains("stale")), false);
-      assert.deepEqual(state.refreshes, ["?provider=claude&user=a%40x.com"]);
+      assert.deepEqual(state.refreshes, [named ? "?provider=claude&user=a%40x.com" : "?provider=claude"]);
       assert.deepEqual(errors, []);
     });
   }
