@@ -129,6 +129,9 @@ type SubscriptionQuota struct {
 	// AsOf is when an allowance shown in place of one that couldn't be
 	// read was read (see keepLast); nil for a reading just made.
 	AsOf *time.Time `json:"asOf,omitempty"`
+	// ReadDeferred distinguishes a reading deliberately not requested from
+	// a request that failed. AsOf and ReadAt still date the cached values.
+	ReadDeferred bool `json:"readDeferred,omitempty"`
 	// ReadAt is when what is shown was read: a key's balance, kept a
 	// minute (KeyBalances), or an account's allowance, which a cache (a
 	// minute's, or a Claude account's until Claude Code tells it again)

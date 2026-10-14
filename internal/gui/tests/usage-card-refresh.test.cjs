@@ -5,14 +5,15 @@
 // at rest the line starts where the card's others do. A click reads that card alone
 // (POST /api/usage/quotas/refresh?provider=&user=), turns while it does, and
 // draws what came back; no other card is asked, and the page doesn't scroll.
-// English and Chinese; no backend, the API is faked here.
+// Button controls in English and Chinese; refresh ordering and deferred
+// readings in all five languages. No backend: the API is faked here.
 const assert = require("node:assert/strict");
 const fs = require("node:fs/promises");
 const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
 
-const assets = path.resolve(__dirname, "../assets");
+const assets = process.env.MAGPIE_QUOTA_ASSETS || path.resolve(__dirname, "../assets");
 const H = 3600e3, M = 60e3;
 const iso = (ms) => new Date(ms).toISOString();
 
@@ -38,7 +39,12 @@ function serve(lang, state) {
     if (url.pathname === "/api/state") return json({ agents: [], profiles: [], settings });
     if (url.pathname === "/api/settings") return json(settings);
     if (url.pathname === "/api/providers") return json({ providers: [], presets: [], excluded: [], gateway: { running: true, window: true } });
-    if (url.pathname === "/api/usage/quotas") { state.gets++; return json(state.quotas); }
+    if (url.pathname === "/api/usage/quotas") {
+      state.gets++;
+      const snapshot = JSON.parse(JSON.stringify(state.quotas));
+      if (state.readGate) { state.readStarted(); await state.readGate; }
+      return json(snapshot);
+    }
     if (url.pathname === "/api/usage/quotas/refresh") {
       assert.equal(route.request().method(), "POST");
       state.refreshes.push(url.search);
@@ -46,6 +52,7 @@ function serve(lang, state) {
       const q = state.quotas.find((x) => x.provider === url.searchParams.get("provider") && (x.user || "") === (url.searchParams.get("user") || ""));
       if (q?.windows?.length) { q.windows[0].used = 61; q.readAt = iso(Date.now()); }
       if (q?.error) { delete q.error; q.windows = [{ name: "Week", used: 10 }]; q.readAt = iso(Date.now()); }
+      if (q) { delete q.asOf; delete q.readDeferred; }
       return json(state.quotas);
     }
     if (url.pathname === "/api/usage/quotas/history") return json([]);
@@ -57,6 +64,53 @@ function serve(lang, state) {
     const contentType = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png" }[path.extname(file)];
     try { await route.fulfill({ body: await fs.readFile(file), contentType }); } catch { await route.fulfill({ status: 404, body: "" }); }
   };
+}
+
+const deferredWords = {
+  en: "not refreshed this time",
+  zh: "本次未主动刷新",
+  "zh-TW": "本次未主動重新整理",
+  ja: "今回は更新を要求していません",
+  de: "diesmal nicht neu abgefragt",
+};
+for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium", "webkit"])) {
+  for (const lang of Object.keys(deferredWords)) {
+    test(`${engine} ${lang}: a deferred card is not a failure, and a late background reply cannot undo its refresh`, async (t) => {
+      const browser = await (engine === "webkit" ? webkit.launch() : chromium.launch({ channel: "chromium" }));
+      t.after(() => browser.close());
+      const page = await browser.newPage({ viewport: { width: 900, height: 700 }, reducedMotion: "reduce" });
+      page.setDefaultTimeout(5000);
+      const errors = [];
+      page.on("pageerror", e => errors.push(e.message));
+      const state = { quotas: fixtures(Date.now()), gets: 0, refreshes: [] };
+      state.quotas[0].asOf = state.quotas[0].readAt;
+      state.quotas[0].readDeferred = true;
+      await page.route("**/*", serve(lang, state));
+      await page.goto("http://magpie.test/?view=usage");
+      const claude = page.locator(".subscription-card", { hasText: "Claude Code" });
+      const read = claude.locator(".quota-read");
+      await read.waitFor();
+      assert.ok((await read.textContent()).includes(deferredWords[lang]), "a request not made was described as failed");
+
+      let release, readStarted;
+      const started = new Promise(r => { readStarted = r; });
+      state.readStarted = readStarted;
+      state.readGate = new Promise(r => { release = r; });
+      t.after(() => release());
+      // Hold an old whole-page response, then click the real card button.
+      await page.evaluate(() => { void loadQuotas(); });
+      await started;
+      await claude.hover();
+      await claude.locator(".quota-refresh").click();
+      await claude.locator(".quota-n", { hasText: "61%" }).waitFor();
+      release();
+      await page.evaluate(() => quotasLoading);
+      assert.match(await claude.locator(".quota-n").textContent(), /61%/, "an older reply undid the click");
+      assert.equal(await read.evaluate(e => e.classList.contains("stale")), false);
+      assert.deepEqual(state.refreshes, ["?provider=claude&user=a%40x.com"]);
+      assert.deepEqual(errors, []);
+    });
+  }
 }
 
 const words = {

@@ -14351,17 +14351,23 @@ function quotasOpened() {
 // landed, so the tray panel, opened, shows what the window does without a
 // refresh by hand (#959). An answer the same as the last isn't drawn again.
 let quotasLoading = null, quotasLater = 0, quotasTries = 0;
+let quotaRefreshVersion = 0;
+const quotaRefreshVersions = new Map();
 function loadQuotas(asked, again) {
   if (quotasLoading && (!asked || quotasLoading.asked)) return quotasLoading;
   if (asked) quotasAskedAt = performance.now();
   if (!again) quotasTries = 0;
-  let reading = false, same = false;
+  let reading = false, same = false, began;
   const p = Promise.resolve(quotasLoading).catch(() => {})
-    .then(() => Promise.all([api("usage/quotas" + (asked ? "?asked=1" : ""), undefined, (h) => { reading = h.get("X-Magpie-Reading") === "1"; }), api("usage/quotas/history?days=45").catch(() => null)]))
+    .then(() => {
+      began = quotaRefreshVersion;
+      return Promise.all([api("usage/quotas" + (asked ? "?asked=1" : ""), undefined, (h) => { reading = h.get("X-Magpie-Reading") === "1"; }), api("usage/quotas/history?days=45").catch(() => null)]);
+    })
     .then(([q, h]) => {
       // an answer that isn't a list of cards is a read that failed: what
       // was read before stays, as it does when the read is refused
       if (q != null && !Array.isArray(q)) { quotas = quotas || []; reading = false; return; }
+      q = keepRefreshedQuotas(q || [], began);
       same =!!again && !!quotas && JSON.stringify(q || []) === JSON.stringify(quotas) && (!h || JSON.stringify(h) === JSON.stringify(quotaHist));
       quotas = q || []; quotasAt = Date.now(); if (h) quotaHist = h;
     }, () => { quotas = quotas || []; reading = false; })
@@ -14374,6 +14380,20 @@ function loadQuotas(asked, again) {
   p.asked = !!asked;
   quotasLoading = p;
   return p;
+}
+
+// A whole-page reply can have left the backend before a card's refresh
+// completed. Keep each card refreshed since this read began, including a
+// card the older reply did not yet contain. A later read may replace it.
+function keepRefreshedQuotas(next, began) {
+  for (const [key, version] of quotaRefreshVersions) if (version <= began) quotaRefreshVersions.delete(key);
+  const kept = new Map((quotas || []).filter(q => quotaRefreshVersions.has(usageAcctKey(q))).map(q => [usageAcctKey(q), q]));
+  const out = next.map(q => {
+    const key = usageAcctKey(q), newer = kept.get(key);
+    kept.delete(key);
+    return newer || q;
+  });
+  return out.concat([...kept.values()]);
 }
 
 // the period picker, in the page's head, for the Overview and Requests
@@ -16356,11 +16376,11 @@ async function hidePanelUsage(key, hide) {
   }
 }
 
-// asOfText: an allowance standing in for one that couldn't be read just
-// now (a vendor rate limiting its usage endpoint) says when it was read.
+// asOfText dates a cached allowance and distinguishes a deliberate skip
+// from a failed read (such as the vendor rate limiting its usage endpoint).
 function asOfText(q, short = false) {
   const text = short ? t("As of {when}", { when: stamp(q.asOf) })
-    : t("As of {when} — couldn't be read just now", { when: new Date(q.asOf).toLocaleString(intlLang()) });
+    : t(q.readDeferred ? "As of {when} — not refreshed this time" : "As of {when} — couldn't be read just now", { when: new Date(q.asOf).toLocaleString(intlLang()) });
   return q.windows?.some((w) => w.resetsAt && new Date(w.resetsAt).getTime() <= Date.now())
     ? text + " · " + t("A cached window has expired; current allowance is unknown") : text;
 }
@@ -17084,7 +17104,15 @@ function quotaRefresh(q) {
     b.classList.add("busy");
     try {
       const qs = await api("usage/quotas/refresh?provider=" + encodeURIComponent(q.provider) + (q.user ? "&user=" + encodeURIComponent(q.user) : ""), {});
-      if (Array.isArray(qs)) { quotas = qs; quotasAt = Date.now(); }
+      const fresh = Array.isArray(qs) && qs.find(x => usageAcctKey(x) === key);
+      if (fresh) {
+        quotaRefreshVersions.set(key, ++quotaRefreshVersion);
+        // The reply includes every card, but only this one was refreshed.
+        // Another card may have completed its own refresh in the meantime.
+        const kept = quotas || [];
+        quotas = kept.some(x => usageAcctKey(x) === key) ? kept.map(x => usageAcctKey(x) === key ? fresh : x) : [...kept, fresh];
+        quotasAt = Date.now();
+      }
     } catch (err) {
       status(err.message, "err");
     } finally {

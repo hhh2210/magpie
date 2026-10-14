@@ -33,6 +33,20 @@ three.
 
 ## Constraints and failure behavior
 
+### Allowance card refreshes
+
+A card refresh applies only the requested account from the API's full
+card list. A whole-page read begun before that refresh completed keeps
+the newer card when its older response arrives; other cards still update,
+and a later whole-page read can replace or remove the card. This also
+keeps two different card refreshes from undoing each other's results.
+`keepRefreshedQuotas` and `quotaRefresh` in
+[`app.js`](../../internal/gui/assets/app.js) own this publication order;
+`quota-refresh-order.test.cjs` covers held responses and failures, and
+`usage-card-refresh.test.cjs` checks the real button in both browser
+engines and all five languages. A cached `readDeferred` card says no
+refresh was requested this time; a failed read retains its failure notice.
+
 ### Streamed output speed
 
 Usage rows and aggregates use `Record.Decode` and `DecodeOf` in

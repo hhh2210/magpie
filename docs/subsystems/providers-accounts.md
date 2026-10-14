@@ -133,6 +133,15 @@ listed models keep their `Available` names unchanged
 
 ## Constraints and failure behavior
 
+An allowance deliberately not requested (a saved Claude account outside
+its card refresh, or allowances set to *When I ask*) can use the last
+reading with `readDeferred: true`. `AsOf` and `ReadAt` still date that
+snapshot; the GUI says it was not refreshed this time rather than that a
+request failed. Network failures, unavailable `/usage` and account refusals
+are not deferred reads. The flag also reaches `magpie quota --json` and
+the gateway report. [`quota_last.go`](../../internal/provider/quota_last.go),
+`TestQuotaDeferredReadIsNotFailure`.
+
 Allowance readings are kept by provider, lowercased account and window in
 `quota-history.json` ([`quota_history.go`](../../internal/provider/quota_history.go)),
 for up to 45 days and 6000 points per window. Failed or stale readings add
