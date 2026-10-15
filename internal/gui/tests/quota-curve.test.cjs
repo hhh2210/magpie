@@ -378,7 +378,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert.equal(await spark.locator("path.qc-line").count(), 1);
       assert.equal((((await spark.locator("path.qc-line").getAttribute("d")).match(/M/g)) || []).length, 1, "the current cycle only");
       assert.equal(await spark.locator("line.qc-even").count(), 1);
-      // Both windows begun: the line reads "↻ 14:26 · Weekly …", and a pace
+      // Both windows begun: the line names both reset times, and a pace
       // after it would read as the week's, so none is said there (#2079)
       assert.equal(await pcard.locator(".pq-pace").count(), 0, "no pace beside another window's deadline");
       // the 5-hour window the only one begun: its pace, by its deadline
@@ -398,7 +398,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       const scard = silent.locator(".pq-card", { hasText: "a@x.com" });
       await scard.waitFor();
       assert.equal(await scard.locator(".pq-pace").count(), 0, "nothing to say, nothing said");
-      assert.ok((await scard.locator(".pq-sub").textContent()).includes("↻"), "the deadline is still said");
+      assert.ok((await scard.locator(".pq-sub").textContent()).includes(lang === "zh" ? "重置于" : "Resets"), "the deadline is still named");
       // the line ends at now already; in 16px a dotted now line read as a
       // stray mark under the curve (#1601)
       assert.equal(await spark.locator("line.qc-now").count(), 0, "no now line in the thin spark");

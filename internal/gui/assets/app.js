@@ -16007,6 +16007,8 @@ function renderPanelQuota() {
   // a row held in the arranging: drawn when it's let go
   if (usageArranging && box.querySelector(".pq-arow")) { usageRenderPending = true; return; }
   const view = box.closest(".view"), keep = view?.scrollTop;
+  const focused = box.contains(document.activeElement) && document.activeElement.matches(".quota-refresh")
+    ? document.activeElement.closest(".pq-card")?.dataset.card : "";
   const restoreFlash = keepQuotaFlash(box);
   box.replaceChildren();
   if (none) { quotaFocus = ""; panelArranging = false; fit(); return; }
@@ -16086,6 +16088,7 @@ function renderPanelQuota() {
   if (away.size) foot.append(el("span", "pq-hidden", t("{n} hidden", { n: away.size })));
   box.append(foot);
   restoreFlash();
+  if (focused) box.querySelector(`.pq-card[data-card="${CSS.escape(focused)}"] .quota-refresh`)?.focus({ preventScroll: true });
   if (view && view.scrollTop !== keep && !box.querySelector(".pq-card.flash")) view.scrollTop = keep;
   panelAge();
   fit();
@@ -16131,8 +16134,8 @@ function panelBalances(bals) {
     if (q.asOf) {
       card.classList.add("stale");
       card.title += "\n" + asOfText(q);
-      card.append(el("span", "pq-sub pq-asof", t("As of {when}", { when: stamp(q.asOf) })));
     }
+    card.append(panelQuotaRead(q));
     grid.append(card);
   }
   g.append(grid);
@@ -16229,6 +16232,25 @@ function shortWindow(name) {
   return m ? m[1] + { minute: "m", hour: "h", day: "d", week: "w", month: "mo" }[m[2].toLowerCase()] : t(name);
 }
 
+// The panel uses the same single-card request as the main window. Keep
+// its reading time separate from the allowance's reset deadline.
+function panelQuotaRead(q) {
+  const row = q.asOf ? el("div", "quota-read stale") : readWhen(q) || el("div", "quota-read");
+  if (q.asOf) {
+    row.append(el("span", "pq-asof", asOfText(q, true)));
+    row.title = asOfText(q);
+  }
+  row.classList.add("pq-read");
+  const key = usageAcctKey(q), notice = quotaRefreshNotices.get(key);
+  const feedback = el("span", "pq-feedback", quotaRefreshing.has(key) ? t("Reading…")
+    : notice && notice.readAt === q.readAt ? t(notice.text)
+    : q.asOf ? t(q.readDeferred ? "Not refreshed this time" : "Couldn't read just now; using cached data") : "");
+  feedback.setAttribute("role", "status");
+  row.prepend(quotaRefresh(q, feedback));
+  row.append(feedback);
+  return row;
+}
+
 function panelQuotaCard(q) {
   const card = el("div", "pq-card");
   card.dataset.card = trayCardID(q);
@@ -16241,6 +16263,7 @@ function panelQuotaCard(q) {
     card.classList.add("err");
     card.append(el("span", "pq-sub err", quotaError(q.error)));
     card.title += "\n" + q.error;
+    card.append(panelQuotaRead(q));
     return card;
   }
   if (q.asOf) {
@@ -16253,6 +16276,7 @@ function panelQuotaCard(q) {
   if (!fam.length && q.windows.some((w) => w.unlimited)) {
     card.append(el("span", "pq-sub", t("Unlimited")));
     if (balance) card.append(balance);
+    card.append(panelQuotaRead(q));
     return card;
   }
   const ws = fam.slice(0, fam.some((w) => w.members) ? 4 : 3);
@@ -16261,15 +16285,14 @@ function panelQuotaCard(q) {
   const sub = el("span", "pq-sub", begun.length
     ? begun.map((w, i) => {
       const at = new Date(w.resetsAt);
-      return at <= Date.now() ? (i || w.members ? ringName(w) + " " : "") + resetText(at)
-        : (i || w.members ? ringName(w) + " " : "↻ ") + resetClock(at);
+      return (i || w.members ? ringName(w) + " " : "") + resetText(at);
     }).join(" · ")
     : t("Not used yet"));
   // The first window's own pace as well, in the line already about its
   // deadline: the thin line under it has no room for what it only hints at,
   // and a card with no readings of that window has nothing to say (#2079).
   // Only while that line is drawn (curves on), and only when the deadline
-  // the line names is that window's alone: after "↻ 14:26 · Weekly Oct 31"
+  // the line names is that window's alone: after "Resets 14:26 · Weekly…"
   // it would read as the week's.
   const line = quotaRange !== "off" && begun.length === 1 && begun[0] === ws[0] && !ws[0].tiers ? quotaWindowLine(q, ws[0]) : null;
   const pace = line ? quotaEtaText(line, Date.now()) : "";
@@ -16302,7 +16325,7 @@ function panelQuotaCard(q) {
   // the first window's cycle, a thin line under the card (#651)
   const spark = ws[0] && !ws[0].tiers ? quotaSpark(q, ws[0]) : null;
   if (spark) card.append(spark);
-  if (q.asOf) card.append(el("span", "pq-sub pq-asof", asOfText(q, true)));
+  card.append(panelQuotaRead(q));
   if (q.resets?.count) {
     const r = el("div", "pq-resets");
     r.append(resetsWords(q.resets, q));
@@ -16928,22 +16951,33 @@ setInterval(() => {
 // Claude account's is read by running Claude Code's own /usage, as the
 // page's Refresh does.
 const quotaRefreshing = new Set();
-function quotaRefresh(q) {
+const quotaRefreshNotices = new Map();
+function quotaRefresh(q, feedback) {
   const key = usageAcctKey(q);
   const b = el("button", "quota-refresh" + (quotaRefreshing.has(key) ? " busy" : ""));
   b.type = "button";
   b.title = t(q.provider === "claude" ? "Read this card again, by running Claude Code's own /usage" : "Read this card again");
+  if (q.provider === "claude") b.title += "\n" + t("Claude usage reads are at least 30 seconds apart.");
   b.setAttribute("aria-label", t("Refresh this card"));
+  b.setAttribute("aria-busy", String(quotaRefreshing.has(key)));
+  b.setAttribute("aria-disabled", String(quotaRefreshing.has(key)));
   b.innerHTML = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3"/></svg>';
   b.onclick = async (e) => {
     e.stopPropagation();
     if (quotaRefreshing.has(key)) return;
     quotaRefreshing.add(key);
+    quotaRefreshNotices.delete(key);
     b.classList.add("busy");
+    b.setAttribute("aria-busy", "true");
+    b.setAttribute("aria-disabled", "true");
+    if (feedback) feedback.textContent = t("Reading…");
     const began = quotaRefreshVersion;
     try {
       const qs = await api("usage/quotas/refresh?provider=" + encodeURIComponent(q.provider) + (q.user ? "&user=" + encodeURIComponent(q.user) : ""), {});
       const fresh = Array.isArray(qs) && qs.find(x => usageAcctKey(x) === key);
+      if (feedback && fresh?.readAt && fresh.readAt === q.readAt && !fresh.asOf && !fresh.error) {
+        quotaRefreshNotices.set(key, { readAt: fresh.readAt, text: "Using cached reading; no newer data" });
+      }
       if (fresh) {
         quotaRefreshVersions.set(key, ++quotaRefreshVersion);
         // The reply includes every card, but only this one was refreshed.
@@ -16969,6 +17003,7 @@ function quotaRefresh(q) {
         for (const x of [q, ...before, ...quotas]) if (belongs(x)) quotaRefreshVersions.set(usageAcctKey(x), version);
       }
     } catch (err) {
+      if (feedback) quotaRefreshNotices.set(key, { readAt: q.readAt, text: "Refresh failed; keeping the previous reading" });
       status(err.message, "err");
     } finally {
       quotaRefreshing.delete(key);

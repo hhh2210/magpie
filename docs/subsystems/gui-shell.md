@@ -54,6 +54,18 @@ refreshing it preserves local providers and other remote magpies.
 engines and all five languages. A cached `readDeferred` card says no
 refresh was requested this time; a failed read retains its failure notice.
 
+The panel's allowance and balance cards use the same `quotaRefresh` action
+beside their own `readAt`/`asOf` reading time (`panelQuotaRead`). The button
+stays visible and keyboard reachable, shows its busy state, and keeps focus
+through a redraw. Reset deadlines use `resetText`, separately from that
+action. A response with the same known `readAt` says it reused the cached
+reading; it does not claim a new read. Claude's tooltip explains its minimum
+30-second read interval. A failed request keeps the prior figures and says
+so on that card. The panel notice applies only while that reading remains
+current; later data supersedes it. No new timer or backend read policy is
+introduced. `panel-quota-refresh.test.cjs` covers these states, keyboard
+activation, request scope and narrow layouts in both engines/all languages.
+
 ### Streamed output speed
 
 Usage rows and aggregates use `Record.Decode` and `DecodeOf` in
