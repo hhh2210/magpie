@@ -132,12 +132,13 @@ for (const engine of ["chromium", "webkit"]) {
           // (ledFit, which may cut names shorter): look once it has been
           await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 100)))));
           const layout = await cells.nth(7).evaluate(cell => {
-            const badges = [...cell.querySelectorAll(".source-badges .src")].map(n => n.getBoundingClientRect());
+            const badges = [...cell.querySelectorAll(".source-badges .src:not([data-service-tier])")].map(n => n.getBoundingClientRect());
             const bounds = cell.getBoundingClientRect();
             const name = cell.querySelector(".where-name").getBoundingClientRect();
             return badges.length === 2 && Math.abs(badges[0].top - badges[1].top) < 1 && badges[0].right < badges[1].left && badges.every(b => b.top >= name.bottom && b.left >= bounds.left && b.right <= bounds.right && b.bottom <= bounds.bottom);
           });
-          assert(layout,"both badges share one row below the account at " + width);
+          assert(layout,"both account/source badges share one row below the account at " + width);
+          assert.equal(await cells.nth(7).locator('[data-service-tier="unknown"]').count(), 1, "missing tier evidence stays separate from account identity");
         }
         await page.setViewportSize({width:1200,height:900});
         await review.focus();

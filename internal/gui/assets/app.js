@@ -18351,16 +18351,25 @@ function sessModelsText(s) {
 // what the gateway sent its calls to, at what reasoning; line(label, value)
 // adds a line of the details
 function sessUsageDetail(d, s, line) {
-  if (s.models?.length) {
+  const parts = s.agent === "codex" && s.model_effort?.length ? s.model_effort : s.models;
+  if (parts?.length) {
     const m = el("div", "sess-models");
-    for (const x of s.models) {
-      m.append(el("span", "model", x.model || t("a model with no name")),
+    for (const x of parts) {
+      const name = x.model || t("a model with no name");
+      const label = "service_tier" in x ? [name, x.effort, serviceTierName(x.service_tier)].filter(Boolean).join(" · ") : name;
+      m.append(el("span", "model", label),
         el("span", "n", t("{a} in · {b} out", { a: fmtN(x.input), b: fmtN(x.output) }) + (x.cache_read ? " · " + t("{n} cached", { n: fmtN(x.cache_read) }) : "") + (x.cache_write ? " · " + t("{n} written", { n: fmtN(x.cache_write) }) : "")),
         el("span", "c" + (x.priced ? "" : " none"), x.priced ? "≈" + fmtCost({ cost: x.cost }) : "—"));
     }
     d.append(m);
   }
   (s.via || []).forEach((v, i) => line(i ? "" : t("Routed"), viaText(v) + " · " + t("{n} tokens", { n: fmtN(v.tokens) }) + (v.credited ? " · " + ledCredits(v).textContent : "")));
+}
+
+function serviceTierName(tier) {
+  return tier === "priority" || tier === "fast" ? t("Fast")
+    : tier === "default" ? t("Default") : tier === "ultrafast" ? t("Ultrafast")
+      : tier === "flex" ? t("Flex") : tier || t("Unknown tier");
 }
 
 // one place a session's calls went through magpie, in words

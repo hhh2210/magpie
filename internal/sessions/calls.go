@@ -21,12 +21,14 @@ import (
 
 // Call is one model call as an agent's own session file records it.
 type Call struct {
-	ResponseID string    `json:"response_id,omitempty"`
-	Time       time.Time `json:"t"`
-	Agent      string    `json:"agent"`   // claude (Claude Code's CLI), claude-desktop (Desktop's Code tab and Cowork), codex
-	Session    string    `json:"session"` // the id the agent sends the gateway as its session header
-	ThreadID   string    `json:"thread_id,omitempty"`
-	Model      string    `json:"model"` // the model the file names: for Claude, the one the vendor answered
+	ResponseID  string    `json:"response_id,omitempty"`
+	Time        time.Time `json:"t"`
+	Agent       string    `json:"agent"`   // claude (Claude Code's CLI), claude-desktop (Desktop's Code tab and Cowork), codex
+	Session     string    `json:"session"` // the id the agent sends the gateway as its session header
+	ThreadID    string    `json:"thread_id,omitempty"`
+	TurnID      string    `json:"turn_id,omitempty"`
+	ServiceTier string    `json:"service_tier,omitempty"` // requested tier; never an upstream confirmation
+	Model       string    `json:"model"`                  // the model the file names: for Claude, the one the vendor answered
 	// Requested: the model Claude Code was running as (its identity note) when it made
 	// the call, as it was asked for: claude-opus-5[1m] for claude-opus-5 with the long context
 	Requested string `json:"requested,omitempty"`
@@ -98,13 +100,13 @@ type callFile struct {
 
 // cxRun is where a rollout's read stands: what its lines have said so far.
 type cxRun struct {
-	Meta                                        bool // session_meta seen
-	Session, ThreadID, Cwd, Model, Effort, Turn string
-	Upstream, AccountID, UserID                 string
-	Usage                                       *codexUsageState
-	Contexts                                    map[string]cxContext
-	Turns                                       map[string]cxOpen
-	LastIn, LastCall                            time.Time // the last thing the model was given, and the last call's end
+	Meta                                              bool // session_meta seen
+	Session, ThreadID, Cwd, Model, Effort, Turn, Tier string
+	Upstream, AccountID, UserID                       string
+	Usage                                             *codexUsageState
+	Contexts                                          map[string]cxContext
+	Turns                                             map[string]cxOpen
+	LastIn, LastCall                                  time.Time // the last thing the model was given, and the last call's end
 	// Answering is set from a call's first output item until its usage line:
 	// AskedAt is what the model had last been given when the call began to
 	// answer, Answered its last output item. An older rollout writes a call's
@@ -131,8 +133,8 @@ type cxCallTiming struct {
 }
 
 type cxContext struct {
-	Model, Effort, Cwd, Upstream string
-	LastIn                       time.Time
+	Model, Effort, Cwd, Upstream, Tier string
+	LastIn                             time.Time
 }
 
 type cxCallUsage = cxUsage
@@ -256,7 +258,7 @@ func callsFor(since time.Time, session, agent string) []Call {
 			continue
 		}
 		st := readCalls(f)
-		for _, c := range st.Calls {
+		for _, c := range codexCallsWithTiers(st.Calls, f.path) {
 			if c.Msg != "" {
 				if seen[c.Msg] {
 					continue
@@ -743,6 +745,7 @@ type cxCall struct {
 		Cwd         string   `json:"cwd"`
 		Model       string   `json:"model"`
 		Effort      ccStr    `json:"effort"`
+		ServiceTier string   `json:"service_tier"`
 		TurnID      string   `json:"turn_id"`
 		ResponseID  string   `json:"response_id"`
 		Usage       *cxUsage `json:"usage"`
@@ -827,6 +830,7 @@ func codexCallLine(st *callFile, b []byte) {
 			r.Model = st.str(p.Model)
 		}
 		r.Effort = st.str(string(p.Effort))
+		r.Tier = st.str(p.ServiceTier)
 		if p.Cwd != "" {
 			r.Cwd = st.str(p.Cwd)
 		}
@@ -883,7 +887,7 @@ func (r *cxRun) saveContext() {
 	if r.Contexts == nil {
 		r.Contexts = map[string]cxContext{}
 	}
-	r.Contexts[r.Turn] = cxContext{r.Model, r.Effort, r.Cwd, r.Upstream, r.LastIn}
+	r.Contexts[r.Turn] = cxContext{r.Model, r.Effort, r.Cwd, r.Upstream, r.Tier, r.LastIn}
 	r.Usage.context(r.Session, r.Turn, r.Model)
 }
 
@@ -900,13 +904,14 @@ func (st *callFile) codexChanged(change *codexChange) {
 	r, v, i := st.CX, change.Value, change.Index
 	context, ok := r.Contexts[v.Turn]
 	if !ok {
-		context = cxContext{r.Model, r.Effort, r.Cwd, r.Upstream, r.LastIn}
+		context = cxContext{r.Model, r.Effort, r.Cwd, r.Upstream, r.Tier, r.LastIn}
 	}
 	threadID := v.ThreadID
 	if threadID == "" && !v.ThreadIDConflict {
 		threadID = r.ThreadID
 	}
 	c := Call{Time: v.At, Agent: "codex", Session: r.Session, ThreadID: threadID, Model: v.Model, Tokens: spent(v.Usage.raw()), ResponseID: v.ResponseID,
+		TurnID: v.Turn, ServiceTier: context.Tier,
 		Upstream: context.Upstream, AccountID: r.AccountID, UserID: r.UserID, Reasoning: v.Usage.Reasoning, Effort: context.Effort, Compaction: v.Compaction, Cwd: context.Cwd, File: st.Path, From: r.LastEnd, To: st.End}
 	if c.Session == "" {
 		c.Session = r.Session
@@ -1042,14 +1047,37 @@ type CallSource struct {
 	Path, Key, Agent string
 	Size             int64
 	Modified         time.Time
+	TierRevision     string // retained Codex log evidence can change without a rollout append
 }
 
 func CallSources() []CallSource {
 	fs := callSources()
 	pruneCalls(fs)
 	out := make([]CallSource, 0, len(fs))
+	tiers := map[string]*codexTierSnapshot{}
+	callsMu.Lock()
+	threads := maps.Clone(callTierThreads)
+	callsMu.Unlock()
 	for _, f := range fs {
-		out = append(out, CallSource{f.path, f.key, f.agent, f.size, f.mod})
+		s := CallSource{Path: f.path, Key: f.key, Agent: f.agent, Size: f.size, Modified: f.mod}
+		if f.agent == "codex" {
+			home := codexHomeOf(f.path)
+			snapshot, ok := tiers[home]
+			if !ok {
+				snapshot = codexTiersForHome(home)
+				tiers[home] = snapshot
+			}
+			ids := threads[f.path]
+			if len(ids) == 0 {
+				ids = []string{strings.TrimPrefix(f.key, "codex:")}
+			}
+			for _, id := range ids {
+				if revision := snapshot.threadRevision(id); revision != "" {
+					s.TierRevision += id + ":" + revision + ";"
+				}
+			}
+		}
+		out = append(out, s)
 	}
 	return out
 }
@@ -1076,5 +1104,5 @@ func ReadCallSource(s CallSource) []Call {
 		}
 	}
 	callsMu.Unlock()
-	return st.Calls
+	return codexCallsWithTiers(st.Calls, s.Path)
 }

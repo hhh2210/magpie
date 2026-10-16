@@ -129,7 +129,7 @@ func CodexProviderIn(home string) string {
 
 // codexStateDBs are the state databases of a Codex folder: state_<n>.sqlite,
 // in sqlite_home when config.toml (or CODEX_SQLITE_HOME) names one.
-func codexStateDBs(home string) []string {
+func codexSQLiteDir(home string) string {
 	dir := home
 	if c := readCodexConfig(home); c.SQLiteHome != "" && home == CodexDir() {
 		dir = c.SQLiteHome
@@ -137,7 +137,11 @@ func codexStateDBs(home string) []string {
 	if d := os.Getenv("CODEX_SQLITE_HOME"); d != "" && home == CodexDir() {
 		dir = d
 	}
-	out, _ := filepath.Glob(filepath.Join(dir, "state_*.sqlite"))
+	return dir
+}
+
+func codexStateDBs(home string) []string {
+	out, _ := filepath.Glob(filepath.Join(codexSQLiteDir(home), "state_*.sqlite"))
 	return out
 }
 

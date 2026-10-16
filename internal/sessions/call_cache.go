@@ -41,7 +41,8 @@ import (
 // What each version names is what a cache of the one before it cannot serve:
 // the version is part of the directory's name, so a cache written by an older
 // one is never read (pruneCalls).
-const callCacheVersion = "calls-v15"
+// v16: preserve Codex turn identity and its explicitly recorded service tier.
+const callCacheVersion = "calls-v16"
 const maxKeptCalls = 131072
 const maxKeptFiles = 64
 
@@ -49,7 +50,8 @@ var callsMu sync.Mutex
 var callIO [64]sync.Mutex
 var callGeneration uint64
 var callCache = map[string]*callFile{}
-var callCounts = map[string]int{} // small allocation hints, never call records
+var callCounts = map[string]int{}           // small allocation hints, never call records
+var callTierThreads = map[string][]string{} // Codex actors a source actually contains, including copied history
 var callOrder []string
 var callRoot string
 
@@ -62,6 +64,7 @@ func resetCalls() {
 	callCache, callOrder = map[string]*callFile{}, nil
 	callContinuations, callContinuationOrder = map[string]callContinuation{}, nil
 	callCounts = map[string]int{}
+	callTierThreads = map[string][]string{}
 	callRoot = ""
 	callGeneration++
 	resetOCCalls()
@@ -85,6 +88,7 @@ func pruneCalls(files []file) {
 		callGeneration++
 		callCache, callOrder, callRoot = map[string]*callFile{}, nil, root
 		callCounts = map[string]int{}
+		callTierThreads = map[string][]string{}
 	}
 	on := make(map[string]bool, len(files))
 	shards := make(map[string]bool, len(files))
@@ -104,6 +108,11 @@ func pruneCalls(files []file) {
 	for path := range callCounts {
 		if !on[path] {
 			delete(callCounts, path)
+		}
+	}
+	for path := range callTierThreads {
+		if !on[path] {
+			delete(callTierThreads, path)
 		}
 	}
 	order = callContinuationOrder[:0]

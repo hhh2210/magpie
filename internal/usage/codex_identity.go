@@ -411,7 +411,7 @@ func cloneEffort(values map[string][]sessions.ModelEffort) map[string][]sessions
 }
 
 func codexModelEffort(rows []Row) map[string][]sessions.ModelEffort {
-	type modelEffortKey struct{ model, effort string }
+	type modelEffortKey struct{ model, effort, tier string }
 	type total struct {
 		value  sessions.ModelEffort
 		priced bool
@@ -427,10 +427,10 @@ func codexModelEffort(rows []Row) map[string][]sessions.ModelEffort {
 			byModel = map[modelEffortKey]*total{}
 			groups[row.codexActor] = byModel
 		}
-		key := modelEffortKey{row.Model, row.Effort}
+		key := modelEffortKey{row.Model, row.Effort, row.ServiceTier()}
 		entry := byModel[key]
 		if entry == nil {
-			entry = &total{value: sessions.ModelEffort{Model: row.Model, Effort: row.Effort}, priced: true}
+			entry = &total{value: sessions.ModelEffort{Model: row.Model, Effort: row.Effort, ServiceTier: row.ServiceTier()}, priced: true}
 			byModel[key] = entry
 		}
 		entry.priced = entry.priced && row.Priced
@@ -453,7 +453,10 @@ func codexModelEffort(rows []Row) map[string][]sessions.ModelEffort {
 			if a.Model != b.Model {
 				return strings.Compare(a.Model, b.Model)
 			}
-			return strings.Compare(a.Effort, b.Effort)
+			if a.Effort != b.Effort {
+				return strings.Compare(a.Effort, b.Effort)
+			}
+			return strings.Compare(a.ServiceTier, b.ServiceTier)
 		})
 		out[actor] = values
 	}

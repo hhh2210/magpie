@@ -166,7 +166,7 @@ func PeriodOf(s string) usage.Period {
 
 func FilterOf(q url.Values) usage.Filter {
 	id, _ := strconv.ParseInt(q.Get("route"), 10, 64)
-	return usage.Filter{Day: q.Get("day"), RouteID: id, Model: q.Get("model"), Agent: q.Get("agent"), Provider: q.Get("provider"), Purpose: q.Get("purpose"), Account: q.Get("account"), CallerKey: q.Get("callerKey"), Failed: q.Get("failed") == "1", Retried: q.Get("retried") == "1", Query: q.Get("q"), Computer: q.Get("computer"), Through: viaOf(q.Get("via"))}
+	return usage.Filter{Day: q.Get("day"), RouteID: id, Model: q.Get("model"), Agent: q.Get("agent"), Provider: q.Get("provider"), Purpose: q.Get("purpose"), Tier: q.Get("tier"), Account: q.Get("account"), CallerKey: q.Get("callerKey"), Failed: q.Get("failed") == "1", Retried: q.Get("retried") == "1", Query: q.Get("q"), Computer: q.Get("computer"), Through: viaOf(q.Get("via"))}
 }
 
 // viaOf is the source a request's ?via= names, "" for both.
@@ -187,6 +187,8 @@ type Row struct {
 	ProviderName   string `json:"providerName"`
 	Access         string `json:"access,omitempty"` // known account/route type, independent of model maker
 	PricingModel   string `json:"pricing_model,omitempty"`
+	ServiceTier    string `json:"service_tier"` // the cost estimate's tier; empty is unknown
+	CostReported   bool   `json:"cost_reported,omitempty"`
 	// ComputerName is the other computer a call was made on, shared through sync (#542)
 	ComputerName string `json:"computerName,omitempty"`
 }
@@ -283,7 +285,8 @@ func LedgerPage(p usage.Period, f usage.Filter, offset, limit int) Ledger {
 	}
 	for _, r := range page {
 		a := who(r.Agent)
-		lr := Row{Row: r, AgentName: a.Name, Icon: a.Icon, ProviderName: which(r.Provider).Name}
+		lr := Row{Row: r, AgentName: a.Name, Icon: a.Icon, ProviderName: which(r.Provider).Name, ServiceTier: r.ServiceTier()}
+		lr.CostReported = r.OwnCost != nil
 		if r.Source != "log" && r.Source != usage.SourceReported {
 			lr.Access = access[r.Provider]
 		}

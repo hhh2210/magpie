@@ -261,6 +261,7 @@ func TestCodexSessionAPIAddsOwnModelEffort(t *testing.T) {
 	}
 
 	statsBefore := statsFor(7)
+	beforeJSON, _ := json.Marshal(statsBefore.Sessions)
 	overview7Response := request("/api/sessions/overview?days=7&agent=codex")
 	var overview7 sessions.Overview
 	if err := json.Unmarshal(overview7Response.Body.Bytes(), &overview7); err != nil {
@@ -295,10 +296,9 @@ func TestCodexSessionAPIAddsOwnModelEffort(t *testing.T) {
 			t.Errorf("seven-day overview %s gateway use = %+v, found=%t", key, row, ok)
 		}
 	}
-	for _, summary := range statsBefore.Sessions {
-		if summary.Agent == "codex" && len(summary.ModelEffort) != 0 {
-			t.Fatalf("overview mutated cached stats summary: %+v", summary)
-		}
+	afterJSON, _ := json.Marshal(statsBefore.Sessions)
+	if string(beforeJSON) != string(afterJSON) {
+		t.Fatal("overview mutated cached stats summaries")
 	}
 
 	allResponse := request("/api/sessions/overview?days=0&agent=codex")

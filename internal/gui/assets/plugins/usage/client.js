@@ -56,6 +56,7 @@ magpie.plugin("usage", (ctx) => {
       <button class="sess-pick" id="ledComputer" type="button" hidden></button>
       <button class="sess-pick" id="ledAgent" type="button" hidden></button>
       <button class="sess-pick" id="ledPurpose" type="button" hidden></button>
+      <button class="sess-pick" id="ledTier" type="button"></button>
       <button class="sess-pick" id="ledProvider" type="button" hidden></button>
       <button class="sess-pick" id="ledAccount" type="button" hidden></button>
       <button class="sess-pick" id="ledKey" type="button" hidden></button>

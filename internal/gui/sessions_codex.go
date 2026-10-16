@@ -4,6 +4,7 @@ import (
 	"slices"
 
 	"github.com/yetone/magpie/internal/sessions"
+	"github.com/yetone/magpie/internal/usage"
 )
 
 func addCodexModelEffort(s *sessions.Session, byThread map[string][]sessions.ModelEffort) {
@@ -14,6 +15,7 @@ func addCodexModelEffort(s *sessions.Session, byThread map[string][]sessions.Mod
 		s.Role = "unknown"
 	}
 	s.ModelEffort = slices.Clone(byThread[s.ID])
+	usage.PriceCodexSession(s, s.ModelEffort)
 }
 
 func addCodexSummaryModelEffort(s *sessions.Summary, byThread map[string][]sessions.ModelEffort) {

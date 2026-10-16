@@ -67,14 +67,14 @@ const L = {
   en: {
     statuses: ["429 · rate_limit_error", "200", "Succeeded", "rate_limit", "200 · 2 tries"], badge: "Local session",
     split: [["In magpie", "180 ms"], ["Tries that failed first", "103 s"], ["Connecting and sending", "820 ms"], ["Vendor's first token", "37 s"]],
-    speed: "24 tok/s", tokens: "300 in · 40 out · 0 cache read · 0 cache creation", labels: { fail: ["Status", "Error type", "Upstream said", "Duration", "Request ID", "Endpoint", "Protocol", "Session ID"], ok: ["Status", "Duration", "Tokens", "Speed", "Request ID", "Endpoint", "Protocol", "Called for", "First token", "In magpie", "Vendor's first token"], log: ["Request ID", "Session ID", "Data source"], logFail: ["Status", "Error type", "Error", "Request ID", "Session ID", "Data source"] },
+    speed: "24 tok/s", tokens: "300 in · 40 out · 0 cache read · 0 cache creation", labels: { fail: ["Status", "Error type", "Upstream said", "Duration", "Service tier", "Cost basis", "Request ID", "Endpoint", "Protocol", "Session ID"], ok: ["Status", "Duration", "Tokens", "Speed", "Request ID", "Endpoint", "Protocol", "Called for", "First token", "In magpie", "Vendor's first token"], log: ["Request ID", "Session ID", "Data source"], logFail: ["Status", "Error type", "Error", "Request ID", "Session ID", "Data source"] },
     subagent: "Subagent",
     noStatus: "Read from the agent's session file. The account is shown only when local metadata identifies it; no service provider is inferred.",
   },
   zh: {
     statuses: ["429 · rate_limit_error", "200", "成功", "rate_limit", "200 · 2 次尝试"], badge: "本地会话",
     split: [["magpie 内耗时", "180 毫秒"], ["之前失败的尝试", "103 秒"], ["连接并发送请求", "820 毫秒"], ["厂商首字等待", "37 秒"]],
-    speed: "24 token/秒", tokens: "输入 300 · 输出 40 · 缓存读取 0 · 缓存创建 0", labels: { fail: ["状态", "错误类型", "上游返回", "耗时", "请求 ID", "终结点", "协议", "会话 ID"], ok: ["状态", "耗时", "Token", "速度", "请求 ID", "终结点", "协议", "用途", "首响", "magpie 内耗时", "厂商首字等待"], log: ["请求 ID", "会话 ID", "数据来源"], logFail: ["状态", "错误类型", "错误", "请求 ID", "会话 ID", "数据来源"] },
+    speed: "24 token/秒", tokens: "输入 300 · 输出 40 · 缓存读取 0 · 缓存创建 0", labels: { fail: ["状态", "错误类型", "上游返回", "耗时", "服务档位", "费用依据", "请求 ID", "终结点", "协议", "会话 ID"], ok: ["状态", "耗时", "Token", "速度", "请求 ID", "终结点", "协议", "用途", "首响", "magpie 内耗时", "厂商首字等待"], log: ["请求 ID", "会话 ID", "数据来源"], logFail: ["状态", "错误类型", "错误", "请求 ID", "会话 ID", "数据来源"] },
     subagent: "子代理",
     noStatus: "读自 Agent 的会话文件；仅在本地元数据能够明确识别时显示账号，不推断供应商。",
   },
@@ -147,9 +147,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.equal(v[0], "429");
         assert.equal(v[1], "rate_limit_error");
         assert.equal(v[2], "Relay: slow down, please");
-        assert.equal(v[4], "req_011abc");
-        assert.equal(v[5], "/v1/responses");
-        assert.equal(v[6], "Responses", "the protocol it was sent upstream in");
+        assert.equal(v[6], "req_011abc");
+        assert.equal(v[7], "/v1/responses");
+        assert.equal(v[8], "Responses", "the protocol it was sent upstream in");
         assert.equal(await rows.nth(0).getAttribute("aria-expanded"), "true");
         assert.equal(await top(), before, "the click moved the page");
         // the details sit under their row, and no row is pushed out of the table
@@ -176,6 +176,9 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         assert.deepEqual(await p.locator(".led tbody tr.led-detail").count(), 2);
         assert(!(await p.locator(".led-detail").nth(1).locator("dd.bad").count()), "a session file's success has nothing in red");
         assert.equal((await p.locator(".led-detail").nth(1).locator("dd").last().textContent()), w.noStatus);
+        // Tier evidence adds detail rows above this one. Wheel it clear of
+        // the sticky horizontal scrollbar before clicking, as a reader does.
+        await reader.reach(p, rows.nth(3));
         await reader.click(p, rows.nth(3));
         assert.deepEqual(await p.locator(".led-detail").nth(2).locator("dt:not(.lc-opt)").allTextContents(), w.labels.logFail);
         assert.equal(await p.locator(".led-detail").nth(2).locator("dd").nth(2).textContent(), "You've hit your limit · resets 3am");

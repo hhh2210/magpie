@@ -160,7 +160,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.locator(".sess-menu .pm-item", { hasText: w.all }).click();
       await page.waitForFunction(() => document.querySelectorAll(".led tbody tr").length === 4);
       assert(!requests.at(-1).has("key") && !requests.at(-1).has("callerKey"));
-      assert.equal(await page.locator(".led tbody tr").last().locator("td").nth(3).textContent(), "Relay · relay.example");
+      assert.equal(await page.locator(".led tbody tr").last().locator("td").nth(3).locator(".where-name").textContent(), "Relay · relay.example");
       await page.setViewportSize({ width: 560, height: 700 });
       // WebKit applies the sidebar's media rule to the new width at the next
       // frame (matchMedia already answers for it), so measure after that frame

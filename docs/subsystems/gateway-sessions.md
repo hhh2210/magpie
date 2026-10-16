@@ -270,6 +270,68 @@ cards only, and a scope with no card answers the cards routes as held.
 a key with some of a provider's models, an account-held key, a provider's
 only key, and a key told nothing, each red when its check is removed.
 
+### Service tiers and cost estimates
+
+Usage keeps the three original tier fields separate: `tier_asked` is the
+client's request, `tier_sent` the body sent on that attempt, and `tier_served`
+the upstream's literal reply. Requests now shows them in the details and
+adds a visible tier badge and `tier=` filter (Default, Fast, Ultrafast,
+Flex, unknown). The API's `service_tier` is the tier used for an **estimate**,
+not new upstream evidence. `cost_reported` identifies a client's explicit
+dollar cost, which remains authoritative even when the tier is unknown.
+
+[`Record.ServiceTier`](../../internal/usage/service_tier.go) prefers an API
+reply to the sent tier. For the built-in ChatGPT/Codex route it prefers the
+sent tier: that backend can echo `default` even when Fast was requested.
+Both values remain visible. An empty sent tier on a gateway attempt does
+not fall back to the original request, since a retry may have stripped the
+parameter. A native Codex call can use its turn's recorded requested tier;
+it never claims an HTTP body or an upstream confirmation was observed.
+Absent/automatic tier evidence is displayed as unknown, with an explicitly
+labelled Standard-price estimate, rather than labelled Default.
+
+[`catalog.ServicePrice`](../../internal/catalog/service_price.go) applies
+published, model-specific OpenAI API ratios to the effective Standard
+tariff, including a configured custom price or provider discount. Fast is
+not universally 2× (GPT-5.5 is 2.5×); Ultrafast is supported only for the
+models with published rates. Cache prices and long-context tiers scale
+together. Unsupported premium tiers/models/context sizes are unpriced,
+not silently charged the Standard rate. These are API-equivalent dollar
+estimates, not subscription allowance consumption or verified invoices.
+The current effective tariff is used for historical calls, as before.
+
+The common pricer feeds the summary, per-request ledger, CSV, gateway
+session projections and cost limits. Packed blocks key their price by tier
+and context-size class too. Codex's per-thread `model_effort` shares are
+split by `service_tier`, and the session UI shows those shares. Session
+totals and cost ranking use the same per-call estimates; daily native
+costs are replaced only when the canonical ledger covers their token
+totals, so partial identity evidence cannot price a whole directory.
+
+Native Codex reads [`codex_service_tier.go`](../../internal/sessions/codex_service_tier.go)
+beside the rollout reader. An explicit `turn_context.service_tier` is kept;
+otherwise the highest-version `logs_*.sqlite` in that Codex home's SQLite
+directory is read-only evidence for the exact thread and turn. Recognized
+shapes are `feedback_tags`'s `tags_json`, WebSocket `response.create`, and
+legacy turn submissions. Conflicting tiers in one turn stay unknown.
+Only identifiers and tiers are memoized, never prompts or request bodies.
+Appends are read incrementally; pruning/replacement invalidates evidence.
+A per-thread revision refreshes the ledger even when its rollout has not
+changed. Missing/expired logs remain unknown; no current global setting is
+used to fill historical gaps. Other Codex homes cannot borrow its evidence.
+
+References: [OpenAI pricing](https://developers.openai.com/api/docs/pricing)
+(rates checked 2026-10-16), and CodexBar at
+[`0ff1cf55`](https://github.com/steipete/CodexBar/tree/0ff1cf55c0a27b63cbb4a7359e0ef2d098114d97):
+`CostUsagePricing.codexPriorityCostUSD` for model-specific API estimates,
+`CostUsageScanner+CodexPriority.swift` for historical turn-log evidence.
+Magpie also reads current `feedback_tags`, distinguishes Default/unknown,
+and uses its own existing three-field gateway evidence. This is a native
+implementation, not a dependency on CodexBar.
+
+Verification: `TestServiceTier*` in catalog, sessions and usage;
+`usage-service-tier.test.cjs` in both engines and all five languages.
+
 ### Calls read from the agents' own files
 
 A call an agent made without magpie reaches Usage only when its own files
@@ -478,7 +540,7 @@ metadata, and the Codex-call cache for compaction, so older parses are rebuilt.
 
 `GET /api/sessions`, `/api/sessions/one` and `/api/sessions/manage` also return
 `model_effort` for each Codex thread, grouped by the canonical Usage ledger's
-`model` and effective reasoning effort. It carries that thread's input, output,
+`model`, effective reasoning effort and service tier. It carries that thread's input, output,
 cached and cache-write tokens, reasoning tokens, cost, and whether every grouped
 call was priced. The Usage ledger's canonical rows supply these values: a gateway
 response paired to the native `response_id` contributes once with the gateway
@@ -486,8 +548,10 @@ row's `model`, effort, tokens and price, and identical local copies are folded
 once.
 `/api/sessions/overview` adds the same field to its `tokens`, `cost` and `active`
 top summaries using the overview's matching local calendar range; `days=0` uses
-all history. The existing `models` field and session statistics keep their prior
-aggregation and meaning.
+all history. The existing `models` field keeps its native aggregation.
+Session cost totals and ranking use the canonical per-call estimates described
+under [service tiers](#service-tiers-and-cost-estimates); activity statistics
+keep their prior meaning.
 These are fields on the existing API responses; no endpoint or statistics
 structure is added.
 

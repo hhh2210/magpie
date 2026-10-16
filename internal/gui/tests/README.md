@@ -1,5 +1,19 @@
 # Dropdown browser regression
 
+`usage-service-tier.test.cjs` exercises Requests' Fast/Default/unknown badges,
+the separate requested/sent/upstream-returned values, cost-basis wording,
+tier filtering, and Codex session model/effort/tier shares. It runs the real
+renderers with synthetic API data in Chromium and WebKit, in all five
+languages at desktop and narrow widths. `MAGPIE_TIER_ASSETS` can select the
+old assets to demonstrate the missing-badge regression; `ARTIFACT_DIR`
+retains Chinese screenshots. It does not open a native window or use a live
+gateway, account or user configuration.
+
+```sh
+node --test internal/gui/tests/usage-service-tier.test.cjs internal/gui/tests/usage-ledger-fit.test.cjs
+go test -tags nogui ./internal/catalog ./internal/sessions ./internal/usage ./internal/gui -run TestServiceTier
+```
+
 `plugin-gateway.test.cjs` checks gateway-only plugin identification, the existing
 JSON options editor and aggregate diagnostics in all five languages on Chromium
 and WebKit. It uses local API fixtures, saves options through the real page, and
