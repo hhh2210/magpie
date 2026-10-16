@@ -262,7 +262,13 @@ func parseCodexTier(body, thread string) (codexTierEvidence, bool) {
 	default:
 		return e, false
 	}
-	return e, e.Thread != "" && e.Turn != ""
+	if e.Thread == "" || e.Turn == "" || len(e.Thread) > 128 || len(e.Turn) > 128 {
+		return e, false
+	}
+	// Regex captures are substrings of body. Copy the short metadata so a
+	// cached ID cannot keep an entire request (and its prompt) alive.
+	e.Thread, e.Turn, e.Tier = strings.Clone(e.Thread), strings.Clone(e.Turn), strings.Clone(e.Tier)
+	return e, true
 }
 
 func codexCallsWithTiers(calls []Call, path string) []Call {

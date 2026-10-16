@@ -5,9 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unsafe"
 )
 
 // These are the metadata shapes Codex writes, with user content omitted:
@@ -34,6 +37,37 @@ func TestServiceTierCodexLogShapes(t *testing.T) {
 		if ok != tt.ok || ok && (got.Thread != tt.thread || got.Turn != tt.turn || got.Tier != tt.tier) {
 			t.Fatalf("shape %q: %+v %v", tt.body, got, ok)
 		}
+	}
+}
+
+func TestServiceTierMetadataDoesNotKeepRequestBody(t *testing.T) {
+	payload := strings.Repeat("private fixture text ", 10000)
+	for name, body := range map[string]string{
+		"websocket":  `session_loop{thread_id=s}:turn{turn.id=t}: websocket request: {"type":"response.create","service_tier":"priority","input":[{"role":"user","content":"` + payload + `"}]}`,
+		"submission": `session_loop{thread_id=s}: Submission sub=Submission { id: "t", op: UserTurn { service_tier: Some(Some("priority")), input: "` + payload + `" } }`,
+		"tags":       `session_loop{thread_id=s}:turn{turn.id=t}: tags_json={"service_tier":"priority","other":"` + payload + `"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			e, ok := parseCodexTier(body, "s")
+			if !ok {
+				t.Fatal("valid metadata was not read")
+			}
+			start := uintptr(unsafe.Pointer(unsafe.StringData(body)))
+			end := start + uintptr(len(body))
+			for field, value := range map[string]string{"thread": e.Thread, "turn": e.Turn, "tier": e.Tier} {
+				at := uintptr(unsafe.Pointer(unsafe.StringData(value)))
+				if at >= start && at < end {
+					t.Fatalf("cached %s still retains the whole request body", field)
+				}
+			}
+			runtime.KeepAlive(body)
+		})
+	}
+	if _, ok := parseCodexTier(`turn{turn.id=`+strings.Repeat("x", 129)+`}: tags_json={"service_tier":"priority"}`, "s"); ok {
+		t.Fatal("oversized turn was retained")
+	}
+	if _, ok := parseCodexTier(`turn{turn.id=t}: tags_json={"service_tier":"priority"}`, strings.Repeat("x", 129)); ok {
+		t.Fatal("oversized thread was retained")
 	}
 }
 
