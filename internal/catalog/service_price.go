@@ -28,7 +28,11 @@ var serviceModelDate = regexp.MustCompile(`-\d{4}-\d{2}-\d{2}$`)
 // selecting context/cache rates. Unknown premium tariffs are not Standard.
 func ServicePrice(model, tier string, standard Price, prompt int) (Price, bool) {
 	tier = ServiceTier(tier)
-	if tier == "" || tier == "default" {
+	// Vendor-specific Standard labels (and unknown words) must not lose
+	// their existing estimate just because they aren't OpenAI tier names.
+	switch tier {
+	case "priority", "ultrafast", "flex":
+	default:
 		return standard, true
 	}
 	model = strings.ToLower(strings.TrimSpace(model))

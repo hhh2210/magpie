@@ -75,7 +75,7 @@ func TestServiceTierEvidenceAndPrice(t *testing.T) {
 		{"relay removes parameter", "relay", "priority", "", "", "", 1},
 		{"native requested", UnknownProvider, "priority", "", "", "priority", 2},
 		{"unknown historical", "codex", "", "", "", "", 1},
-		{"unknown premium", "openai", "turbo", "turbo", "", "turbo", 0},
+		{"unknown tier word", "openai", "turbo", "turbo", "", "turbo", 1},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			r := Record{Provider: tt.provider, Model: "gpt-6.1-sol", TierAsked: tt.asked, TierSent: tt.sent, TierServed: tt.served, Input: 1000000}
@@ -83,12 +83,6 @@ func TestServiceTierEvidenceAndPrice(t *testing.T) {
 				t.Fatalf("tier=%q, want %q", r.ServiceTier(), tt.tier)
 			}
 			p := price(r)
-			if tt.factor == 0 {
-				if p != nil {
-					t.Fatal("unsupported premium was priced as Standard")
-				}
-				return
-			}
 			if p == nil || r.CostAt(*p) != 2*tt.factor {
 				t.Fatalf("cost should be %g; tariff=%+v", 2*tt.factor, p)
 			}
@@ -100,6 +94,52 @@ func TestServiceTierEvidenceAndPrice(t *testing.T) {
 	r := Record{Model: "gpt-6.1-sol", Input: 100, TierAsked: "ultrafast", OwnCost: new(0.03)}
 	if p := price(r); p == nil || r.CostAt(*p) != .03 {
 		t.Fatal("reported cost was multiplied")
+	}
+}
+
+func TestServiceTierVendorStandardKeepsCost(t *testing.T) {
+	pageHome(t)
+	cases := []struct{ provider, model, tier string }{
+		{"anthropic", "claude-sonnet-4-5", "standard"},
+		{"groq", "llama-3.3-70b", "on_demand"},
+		{"openai", "gpt-6-astra", "scale"},
+		{"other", "custom-model", "vendor-specific"},
+	}
+	s := settings.Load()
+	s.ModelPrices = map[string]settings.ModelPrice{}
+	for _, tt := range cases {
+		s.ModelPrices[tt.provider+"/"+tt.model] = settings.ModelPrice{
+			Input: new(2.0), Output: new(0.0), CacheRead: new(0.0), CacheWrite: new(0.0),
+		}
+	}
+	if err := settings.Save(s); err != nil {
+		t.Fatal(err)
+	}
+	price := Pricer()
+	now := time.Now()
+	for _, tt := range cases {
+		r := Record{Provider: tt.provider, Model: tt.model, TierServed: tt.tier, Input: 1000000, Status: 200}
+		p := price(r)
+		if p == nil || r.CostAt(*p) != 2 {
+			t.Errorf("%s/%s served=%q must keep its $2 Standard estimate; tariff=%+v", tt.provider, tt.model, tt.tier, p)
+		}
+		// Keep enough ordinary vendor rows to exercise packed pricing too.
+		for i := 0; i < 75; i++ {
+			r.Time = now.Add(-time.Duration(i) * time.Second)
+			Append(r)
+		}
+	}
+	page := QueryPage(All, Filter{}, 0, 500)
+	if len(page.Rows) != 300 || page.Sum.Cost != 600 {
+		t.Fatalf("vendor ledger: rows=%d cost=%g, want 300 rows costing $600", len(page.Rows), page.Sum.Cost)
+	}
+	for _, row := range page.Rows {
+		if !row.Priced || row.Cost != 2 || row.TierServed == "" || row.ServiceTier() != row.TierServed {
+			t.Fatalf("lost Standard cost or raw tier: %+v", row)
+		}
+	}
+	if sum := Summarize(All); sum.Cost != 600 {
+		t.Fatalf("vendor summary cost=%g, want 600", sum.Cost)
 	}
 }
 

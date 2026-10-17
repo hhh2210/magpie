@@ -294,7 +294,10 @@ labelled Standard-price estimate, rather than labelled Default.
 published, model-specific OpenAI API ratios to the effective Standard
 tariff, including a configured custom price or provider discount. Fast is
 not universally 2× (GPT-5.5 is 2.5×); Ultrafast is supported only for the
-models with published rates. Cache prices and long-context tiers scale
+models with published rates. Only `priority`/`fast`, `ultrafast` and `flex`
+select a different tariff. Other words, including `standard`, `on_demand`,
+`scale` and unknown vendor values, keep the effective Standard price and
+their original tier evidence. Cache prices and long-context tiers scale
 together. Unsupported premium tiers/models/context sizes are unpriced,
 not silently charged the Standard rate. These are API-equivalent dollar
 estimates, not subscription allowance consumption or verified invoices.
