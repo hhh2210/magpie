@@ -28,7 +28,7 @@ type blockPricer struct {
 	aliases map[string]string
 	wires   map[string]string
 	price   func(Record) *catalog.Price
-	by      map[[4]string]pricedAs
+	by      map[[6]string]pricedAs
 	agents  map[string][2]string
 	pooled  []*[]packedRow
 }
@@ -48,12 +48,16 @@ func (b *blockPricer) release() {
 }
 
 func newBlockPricer(aliases, wires map[string]string, price func(Record) *catalog.Price) *blockPricer {
-	return &blockPricer{aliases: aliases, wires: wires, price: price, by: map[[4]string]pricedAs{}, agents: map[string][2]string{}}
+	return &blockPricer{aliases: aliases, wires: wires, price: price, by: map[[6]string]pricedAs{}, agents: map[string][2]string{}}
 }
 
 // as is priceRow's answer for a gateway call of these names.
-func (b *blockPricer) as(prov, model, served, effort string) pricedAs {
-	k := [4]string{prov, model, served, effort}
+func (b *blockPricer) as(prov, model, served, effort, tier string, prompt int) pricedAs {
+	context := ""
+	if prompt > 272000 {
+		context = "long"
+	}
+	k := [6]string{prov, model, served, effort, tier, context}
 	if a, ok := b.by[k]; ok {
 		return a
 	}
@@ -68,7 +72,7 @@ func (b *blockPricer) as(prov, model, served, effort string) pricedAs {
 	if GroupRouted(sent, served) {
 		a.flags |= 32
 	}
-	a.price = b.price(Record{Provider: prov, Model: model, Served: served, Effort: effort})
+	a.price = b.price(Record{Provider: prov, Model: model, Served: served, Effort: effort, TierServed: tier, Input: prompt})
 	b.by[k] = a
 	return a
 }
@@ -120,14 +124,20 @@ func (b *blockPricer) block(packed *rowChunk) *rowChunk {
 		flags    uint16
 		price    *catalog.Price
 	}
-	names := map[[4]uint32]ids{}
+	names := map[[8]uint32]ids{}
 	agents := map[uint32][2]uint32{}
 	for i := range c.Rows {
 		p := &c.Rows[i]
-		k := [4]uint32{p.Text[1], p.Text[5], p.Text[7], p.Text[8]}
+		prompt := int(p.Tokens[0] + p.Tokens[2] + p.Tokens[3])
+		var long uint32
+		if prompt > 272000 {
+			long = 1
+		}
+		k := [8]uint32{p.Text[1], p.Text[5], p.Text[7], p.Text[8], p.Text[30], p.Text[31], p.Text[32], long}
 		got, ok := names[k]
 		if !ok {
-			a := b.as(c.Strings[k[0]], c.Strings[k[1]], c.Strings[k[2]], c.Strings[k[3]])
+			r := Record{Provider: c.Strings[k[0]], TierAsked: c.Strings[k[4]], TierSent: c.Strings[k[5]], TierServed: c.Strings[k[6]]}
+			a := b.as(r.Provider, c.Strings[k[1]], c.Strings[k[2]], c.Strings[k[3]], r.ServiceTier(), prompt)
 			got = ids{intern(a.provider, k[0]), a.flags, a.price}
 			names[k] = got
 		}

@@ -230,7 +230,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
         // the first row: asked for sol, sent gpt-6-sol, served gpt-6-luna, amber
         const first = page.locator(".led tbody tr").first().locator("td");
         assert.equal(await first.nth(2).textContent(), "sol");
-        assert.equal(await first.nth(3).textContent(), "Relay · team");
+        assert.equal(await first.nth(3).locator(".where-name").textContent(), "Relay · team");
         assert.equal(await first.nth(4).textContent(), "gpt-6-sol");
         assert.equal(await first.nth(6).textContent(), "high");
         assert.equal(await page.locator(".led .swap").count(), 1, "only the swapped row is marked");

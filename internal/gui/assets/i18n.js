@@ -4,6 +4,8 @@
 // works. {name} slots are filled by t(str, vars).
 const I18N = {
   zh: {
+    "Unknown tier": "档位未知",
+    "Flex": "Flex",
     "None": "无",
     "Prompt": "提示词",
     "Request hook": "请求 Hook",
@@ -3694,6 +3696,8 @@ const I18N = {
     "Reading the reply": "读取回复",
   },
   "zh-TW": {
+    "Unknown tier": "檔位未知",
+    "Flex": "Flex",
     "None": "無",
     "Prompt": "提示詞",
     "Request hook": "請求 Hook",
@@ -7369,6 +7373,8 @@ const I18N = {
     "Reading the reply": "讀取回覆",
   },
   ja: {
+    "Unknown tier": "階層不明",
+    "Flex": "Flex",
     "None": "なし",
     "Prompt": "プロンプト",
     "Request hook": "リクエストフック",
@@ -11046,6 +11052,8 @@ const I18N = {
     "Reading the reply": "応答の読み取り",
   },
   de: {
+    "Unknown tier": "Unbekannte Stufe",
+    "Flex": "Flex",
     "None": "Keine",
     "Prompt": "Prompt",
     "Request hook": "Anfrage-Hook",

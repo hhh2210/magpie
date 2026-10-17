@@ -621,6 +621,7 @@ async function hideUsageAgent(id, hide) {
 // server pages it (/api/usage/requests) and saves it whole as CSV.
 
 let ledger = null; // the page shown: { rows, offset, total, agents, …totals }
+let ledTier = "";
 let ledOffset = 0, ledPurpose = "", ledAgent = "", ledProvider = "", ledAccount = "", ledCallerKey = "", ledFailed = false, ledRetried = false, ledQuery = "", ledModel = "", ledRoute = 0, ledComputer = "", ledDay = "", ledVia = "";
 
 const LED_PAGE = 100;
@@ -633,10 +634,10 @@ try {
 
 let ledRouteInfo = null, ledBeforeRoute = null;
 window.openUsageRoute = (route) => {
-  if (!ledBeforeRoute) ledBeforeRoute = { period, ledOffset, ledPurpose, ledAgent, ledProvider, ledAccount, ledCallerKey, ledFailed, ledRetried, ledQuery, ledModel, ledComputer, ledDay, ledVia };
+  if (!ledBeforeRoute) ledBeforeRoute = { period, ledOffset, ledTier, ledPurpose, ledAgent, ledProvider, ledAccount, ledCallerKey, ledFailed, ledRetried, ledQuery, ledModel, ledComputer, ledDay, ledVia };
   ledRoute = route.id;
   ledRouteInfo = route;
-  ledOffset = 0; ledPurpose = ""; ledAgent = ""; ledProvider = ""; ledAccount = ""; ledCallerKey = ""; ledFailed = false; ledRetried = false; ledQuery = ""; ledModel = ""; ledComputer = ""; ledVia = "";
+  ledOffset = 0; ledTier = ""; ledPurpose = ""; ledAgent = ""; ledProvider = ""; ledAccount = ""; ledCallerKey = ""; ledFailed = false; ledRetried = false; ledQuery = ""; ledModel = ""; ledComputer = ""; ledVia = "";
   ledDay = "";
   $("#ledQ").value = "";
   period = "all";
@@ -650,6 +651,7 @@ function ledParams(extra) {
   if (ledDay) q.set("day", ledDay);
   if (ledAgent) q.set("agent", ledAgent);
   if (ledPurpose) q.set("purpose", ledPurpose);
+  if (ledTier) q.set("tier", ledTier);
   if (ledProvider) q.set("provider", ledProvider);
   if (ledAccount) q.set("account", ledAccount);
   if (ledComputer) q.set("computer", ledComputer);
@@ -787,6 +789,13 @@ const ledOpen = new Set(); // the rows opened, kept across a refresh
 
 // what is known of one request beyond its row: the id its vendor gave it,
 // the path it went to, and, if it failed, what the vendor said
+function tierCostNote(r) {
+  if (r.cost_reported) return t("Cost reported by the client");
+  if (!r.priced) return t("No known price for this model and service tier");
+  if (!r.service_tier) return t("Standard-price estimate; the service tier was not recorded");
+  return t("API-equivalent estimate for {tier}; not subscription allowance usage or a verified bill", { tier: serviceTierName(r.service_tier) });
+}
+
 function ledDetail(r, cols) {
   const dl = el("dl", "led-dl");
   const add = (name, value, cls) => {
@@ -825,6 +834,13 @@ function ledDetail(r, cols) {
   };
   opt("Sent", r.model);
   opt("Effort", r.effort);
+  if (r.agent === "codex" || r.session_role || r.tier_asked || r.tier_sent || r.tier_served) {
+    add("Service tier", serviceTierName(r.service_tier));
+    add("Tier requested", r.tier_asked);
+    add("Tier sent", r.tier_sent);
+    add("Tier returned by upstream", r.tier_served);
+    add("Cost basis", tierCostNote(r));
+  }
   // its tokens at every width, the cache's beside in and out: a prompt read
   // from the cache is told from one that missed it, whose input is the
   // whole of it, where the row's cache columns are out of sight (#1839).
@@ -1465,6 +1481,9 @@ function renderLedger() {
   // the filters: choices seen in the period, and failures alone
   sessPick($("#ledPurpose"), "All purposes", ledPurpose, purposeOptions(l.purposes || [], ledPurpose), "Purpose", (v) => { ledPurpose = v; ledOffset = 0; loadLedger().catch((e) => status(e.message, "err")); });
   $("#ledPurpose").title = t("Purpose");
+  sessPick($("#ledTier"), "All service tiers", ledTier,
+    ["default", "priority", "ultrafast", "flex", "unknown"].map((v) => ({ v, name: serviceTierName(v === "unknown" ? "" : v), note: "" })),
+    "Service tier", (v) => { ledTier = v; ledOffset = 0; loadLedger().catch((e) => status(e.message, "err")); });
   sessPick($("#ledComputer"), "All computers", ledComputer, computers, "Computer", (v) => { ledComputer = v; ledOffset = 0; loadLedger().catch((e) => status(e.message, "err")); });
   sessPick($("#ledAgent"), "All agents", ledAgent, l.agents.map((a) => ({ v: a.id, name: a.name, note: "" })), "Agent", (v) => { ledAgent = v; ledOffset = 0; loadLedger().catch((e) => status(e.message, "err")); });
   sessPick($("#ledProvider"), "All providers", ledProvider, providers.map((p) => ({ v: p.id, name: t(p.name), note: "" })), "Provider", (v) => { ledProvider = v; ledOffset = 0; loadLedger().catch((e) => status(e.message, "err")); });
@@ -1562,7 +1581,7 @@ function renderLedger() {
   $("#ledRouteClear").setAttribute("aria-label", t("Clear filter"));
   $("#ledRouteClear").onclick = () => {
     ledRoute = 0; ledRouteInfo = null;
-    if (ledBeforeRoute) ({ period, ledOffset, ledPurpose = "", ledAgent, ledProvider, ledAccount = "", ledCallerKey, ledFailed, ledRetried = false, ledQuery, ledModel, ledComputer = "", ledDay = "", ledVia = "" } = ledBeforeRoute);
+    if (ledBeforeRoute) ({ period, ledOffset, ledTier = "", ledPurpose = "", ledAgent, ledProvider, ledAccount = "", ledCallerKey, ledFailed, ledRetried = false, ledQuery, ledModel, ledComputer = "", ledDay = "", ledVia = "" } = ledBeforeRoute);
     ledBeforeRoute = null;
     $("#ledQ").value = ledQuery;
     loadLedger().catch((e) => status(e.message, "err"));
@@ -1574,7 +1593,7 @@ function renderLedger() {
   const pager = $("#ledPager");
   if (!l.total) {
     wrap.classList.add("none");
-    const filtered = ledPurpose || ledDay || ledRoute || ledAgent || ledProvider || ledAccount || ledComputer || ledCallerKey || ledModel || ledVia || ledFailed || ledRetried || ledQuery.trim();
+    const filtered = ledTier || ledPurpose || ledDay || ledRoute || ledAgent || ledProvider || ledAccount || ledComputer || ledCallerKey || ledModel || ledVia || ledFailed || ledRetried || ledQuery.trim();
     const none = noCallsIn(period);
     wrap.replaceChildren(el("div", "led-none", filtered ? t("No requests match these filters.") : t(none)));
     ledFit();
@@ -1667,6 +1686,16 @@ function renderLedger() {
       badges.append(k);
     }
     if (badges.childElementCount) wc.append(badges);
+    if (r.agent === "codex" || r.session_role || r.tier_asked || r.tier_sent || r.tier_served) {
+      // Its own line: account/source badges deliberately do not wrap, and
+      // adding a tier to that line would widen the table at narrow sizes.
+      const modes = el("div", "source-badges");
+      const tier = el("span", "src", serviceTierName(r.service_tier));
+      tier.dataset.serviceTier = r.service_tier || "unknown";
+      tier.title = tierCostNote(r);
+      modes.append(tier);
+      wc.append(modes);
+    }
     // the model sent is what the gateway sent the vendor: a session file has none
     // The log names a model, but does not capture the outbound HTTP request.
     td(r.model || "—", "model " + (r.model ? "model-value" : "faint"), r.source === "log" && r.model ? t("Model recorded in the local session log; the outbound HTTP request was not captured.") : r.model);
@@ -3215,10 +3244,11 @@ if (mode === "window" && params.get("view") === "usage") {
   ledProvider = params.get("provider") || "";
   ledAgent = params.get("agent") || "";
   ledPurpose = params.get("purpose") || "";
+  ledTier = params.get("tier") || "";
   ledComputer = params.get("computer") || "";
   const v = params.get("via") || "";
   ledVia = v === "through" || v === "direct" || v === "reported" ? v : "";
   const u = new URL(location.href);
-  for (const k of ["tab", "provider", "agent", "computer", "card", "purpose", "via", "period"]) u.searchParams.delete(k);
+  for (const k of ["tab", "provider", "agent", "computer", "card", "purpose", "tier", "via", "period"]) u.searchParams.delete(k);
   history.replaceState(null, "", u);
 }

@@ -96,8 +96,9 @@ type Model struct {
 
 // ModelEffort is one model and reasoning effort's share of a session.
 type ModelEffort struct {
-	Model  string `json:"model"`
-	Effort string `json:"effort"`
+	Model       string `json:"model"`
+	Effort      string `json:"effort"`
+	ServiceTier string `json:"service_tier"`
 	Tokens
 	Reasoning int     `json:"reasoning"`
 	Cost      float64 `json:"cost"`

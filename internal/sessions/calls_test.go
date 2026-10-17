@@ -214,12 +214,12 @@ func TestCallsCodex(t *testing.T) {
 	cs := Calls(time.Time{})
 	want := []Call{
 		{Time: callT0.Add(200 * time.Second), Agent: "codex", Session: "0190cccc-1111-7222-8333-444455556666", ThreadID: "0190cccc-1111-7222-8333-444455556666", Tokens: Tokens{6, 3, 4, 0, 0}},
-		{Time: callT0.Add(103 * time.Second), Agent: "codex", Session: "thread-2", ThreadID: "thread-2", Model: "gpt-6-astra", Tokens: Tokens{500, 20, 0, 0, 0}, Reasoning: 5, Effort: "medium", Cwd: "/work/it", Millis: 1000},
-		{Time: callT0.Add(102 * time.Second), Agent: "codex", Session: "thread-2", ThreadID: "thread-2", Model: "gpt-6-astra", Tokens: Tokens{100, 100, 3900, 0, 0}, Reasoning: 30, Effort: "medium", Cwd: "/work/it", Millis: 1000},
+		{Time: callT0.Add(103 * time.Second), Agent: "codex", Session: "thread-2", ThreadID: "thread-2", TurnID: "u1", Model: "gpt-6-astra", Tokens: Tokens{500, 20, 0, 0, 0}, Reasoning: 5, Effort: "medium", Cwd: "/work/it", Millis: 1000},
+		{Time: callT0.Add(102 * time.Second), Agent: "codex", Session: "thread-2", ThreadID: "thread-2", TurnID: "u1", Model: "gpt-6-astra", Tokens: Tokens{100, 100, 3900, 0, 0}, Reasoning: 30, Effort: "medium", Cwd: "/work/it", Millis: 1000},
 		// input_tokens holds the cache write as well as the read (#589): 2500 - 2000 - 300
-		{Time: callT0.Add(12 * time.Second), Agent: "codex", Session: "sess-x", ThreadID: "thread-id", Model: "gpt-6-luna", Tokens: Tokens{200, 150, 2000, 300, 0}, Reasoning: 40, Effort: "low", Cwd: "/work/it", Millis: 1000},
-		{Time: callT0.Add(11 * time.Second), Agent: "codex", Session: "sess-x", ThreadID: "thread-id", Model: "gpt-6-luna", Tokens: Tokens{1000, 100, 1000, 0, 0}, Reasoning: 40, Effort: "low", Cwd: "/work/it", Millis: 1000},
-		{Time: callT0.Add(2 * time.Second), Agent: "codex", Session: "sess-x", ThreadID: "thread-id", Model: "gpt-6-astra", Tokens: Tokens{400, 50, 600, 0, 0}, Reasoning: 20, Effort: "high", Cwd: "/work/it", TTFT: 700, Millis: 5000},
+		{Time: callT0.Add(12 * time.Second), Agent: "codex", Session: "sess-x", ThreadID: "thread-id", TurnID: "t2", Model: "gpt-6-luna", Tokens: Tokens{200, 150, 2000, 300, 0}, Reasoning: 40, Effort: "low", Cwd: "/work/it", Millis: 1000},
+		{Time: callT0.Add(11 * time.Second), Agent: "codex", Session: "sess-x", ThreadID: "thread-id", TurnID: "t2", Model: "gpt-6-luna", Tokens: Tokens{1000, 100, 1000, 0, 0}, Reasoning: 40, Effort: "low", Cwd: "/work/it", Millis: 1000},
+		{Time: callT0.Add(2 * time.Second), Agent: "codex", Session: "sess-x", ThreadID: "thread-id", TurnID: "t1", Model: "gpt-6-astra", Tokens: Tokens{400, 50, 600, 0, 0}, Reasoning: 20, Effort: "high", Cwd: "/work/it", TTFT: 700, Millis: 5000},
 	}
 	if len(cs) != len(want) {
 		t.Fatalf("want %d calls, got %d: %+v", len(want), len(cs), cs)

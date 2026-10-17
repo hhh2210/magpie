@@ -452,7 +452,7 @@ func statsFor(days int) sessions.Stats {
 }
 
 func combinedSessionStats(days int) sessions.Stats {
-	st := sessions.StatsFor(days)
+	st := usage.PriceCodexStats(sessions.StatsFor(days))
 	nativeKeys := map[string]bool{}
 	for _, s := range sessions.List(sessions.All) {
 		nativeKeys[s.Agent+"|"+s.ID] = true

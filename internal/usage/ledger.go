@@ -60,6 +60,7 @@ type Filter struct {
 	Agent     string
 	Provider  string // a provider's id, as the ledger's rows have it
 	Purpose   string // PurposeOf's key; empty keeps every purpose
+	Tier      string // service tier used for the estimate; "unknown" selects absent evidence
 	// Account narrows to the calls a subscription account answered, by its
 	// name as Record.Account gives it (#557)
 	Account string
@@ -167,6 +168,15 @@ func (f Filter) keepsRecord(r Record, codexIdentity bool, subagent, parentAgent 
 	}
 	if f.Purpose != "" && PurposeOf(r.Kind) != f.Purpose {
 		return false
+	}
+	if f.Tier != "" {
+		tier := r.ServiceTier()
+		if tier == "" {
+			tier = "unknown"
+		}
+		if tier != f.Tier {
+			return false
+		}
 	}
 	if f.Account != "" && r.Account() != f.Account {
 		return false
@@ -349,6 +359,7 @@ func logRecord(c sessions.Call) Record {
 		Millis: c.Millis, TTFT: c.TTFT, Session: c.Session, RequestID: c.RequestID, Error: c.ErrorText, ErrType: c.Error, Subagent: sessions.SubagentOf(c.File), ParentAgent: sessions.SubagentParent(c.File)}
 	if c.Agent == "codex" {
 		r.ResponseID = c.ResponseID
+		r.TierAsked = c.ServiceTier
 		r.Compaction = codexCompactionOf(c)
 	}
 	if c.Agent == "codex" || c.Agent == "opencode" {
@@ -519,8 +530,30 @@ var ownPrice catalog.Price
 // has one, a zero set by the user included, so a ledger that matched the
 // vendor's bill still does.
 func Pricer() func(Record) *catalog.Price {
-	prices := map[[3]string]*catalog.Price{}
+	type pricedModel struct {
+		price *catalog.Price
+		model string
+	}
+	prices := map[[3]string]pricedModel{}
+	tiers := map[[5]string]*catalog.Price{}
 	s := settings.Load()
+	atTier := func(r Record, p pricedModel) *catalog.Price {
+		if tier := r.ServiceTier(); tier == "" || tier == "default" {
+			return p.price
+		}
+		context := ""
+		if r.Input+r.CacheRead+r.CacheWrite > 272000 {
+			context = "long"
+		}
+		k := [5]string{r.Provider, r.Model, p.model, r.ServiceTier(), context}
+		if price, ok := tiers[k]; ok {
+			return price
+		}
+		r.Model = p.model
+		price := servicePrice(r, p.price)
+		tiers[k] = price
+		return price
+	}
 	return func(r Record) *catalog.Price {
 		if r.OwnCost != nil {
 			return &ownPrice // CostAt answers its own cost (#1874)
@@ -531,20 +564,22 @@ func Pricer() func(Record) *catalog.Price {
 		}
 		k := [3]string{r.Provider, r.Model, served}
 		if pr, ok := prices[k]; ok {
-			return pr
+			return atTier(r, pr)
 		}
 		var pr *catalog.Price
+		model := r.Model
 		v, ok := provider.EffectivePriceIn(s, r.Provider, r.Model)
 		if !ok && served != "" {
 			v, ok = provider.EffectivePriceIn(s, r.Provider, served)
+			model = served
 		}
 		if ok {
 			pr = &v
 		} else {
 			catalog.Missing() // models.dev may list it by now
 		}
-		prices[k] = pr
-		return pr
+		prices[k] = pricedModel{pr, model}
+		return atTier(r, prices[k])
 	}
 }
 

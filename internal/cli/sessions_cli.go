@@ -135,14 +135,25 @@ func sessionsTo(w io.Writer, args []string, now time.Time) error {
 		return err
 	}
 	if o.days >= 0 {
-		return sessionStats(w, o, sessions.StatsAt(o.days, now), now)
+		return sessionStats(w, o, stats.PriceCodexStats(sessions.StatsAt(o.days, now)), now)
 	}
 	// the list reads every session, as the "%d more" foot and a model or
 	// folder picked among them are counted over the whole set: sessions.Limit
 	// cut it to 200 whatever --limit said, so --limit 500 could never show
 	// more than 200 and the foot was counted off that truncated list. Only
 	// o.limit rows are printed, so reading the rest costs a parse, not output
-	return sessionList(w, o, sessions.List(sessions.All), now)
+	list := sessions.List(sessions.All)
+	var parts map[string][]sessions.ModelEffort
+	for i := range list {
+		if list[i].Agent != "codex" {
+			continue
+		}
+		if parts == nil {
+			parts = stats.CodexModelEffort(stats.All)
+		}
+		stats.PriceCodexSession(&list[i], parts[list[i].ID])
+	}
+	return sessionList(w, o, list, now)
 }
 
 // resolve finds what was typed among what there is: the same, then the
