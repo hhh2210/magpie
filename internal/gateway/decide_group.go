@@ -222,6 +222,7 @@ func (s *Server) serveDecideTries(w http.ResponseWriter, r *http.Request, body [
 		tried(status, errMsg, fail, rest, used)
 		if status < 400 {
 			servedCandidate(c, used.Input+used.Output)
+			restIfSpent(c, header)
 		}
 		var keyID, keyName string
 		if c.p.Account == nil && c.p.Key != "" {

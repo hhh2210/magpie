@@ -3079,6 +3079,9 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 			// with the try's own, to the agent if it is the one it gets
 			// (#4145)
 			ctx = withReplySink(ctx, c.p.ID, hw.heardUpstream)
+			// and what its reply says is left of the key's rate limit,
+			// for restIfSpent once it is served
+			ctx = withLimitSink(ctx, hw.heardLimits)
 			// a key or account with a MaxConcurrency is asked once one of
 			// its slots is free, in turn; the agent gone while it waits,
 			// nothing is sent (the 499 below)
@@ -4031,6 +4034,9 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 			}
 		} else if call.Status < 400 {
 			servedCandidate(c, call.Usage.Input+call.Usage.Output+call.Usage.CacheRead+call.Usage.CacheWrite)
+			// a key that said its rate limit is spent sits out until it
+			// resets, so the next request isn't refused first
+			restIfSpent(c, hw.rateLimits())
 			// how fast it answered, for Speed first (speed.go)
 			noteTrySpeed(c, try, call.Usage.Output, call.Usage.Reasoning, ended)
 			// a compaction a rule sent to a model of its own leaves the

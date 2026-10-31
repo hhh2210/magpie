@@ -1249,7 +1249,13 @@ func (s *Server) restAfterMarked(c candidate, status int, header http.Header, bo
 		if own > 0 {
 			d = own
 		}
-		if w := resetsAt(body, now); w > 0 {
+		if w := geminiDayBackIn(c, body, now); w > 0 {
+			// the day's quota is back at midnight Pacific, its "Please
+			// retry in 33s" no word on it; a time the user set wins
+			if own <= 0 {
+				d, r.By = w, "resets"
+			}
+		} else if w := resetsAt(body, now); w > 0 {
 			d, r.By = w, "resets"
 		} else if w := clineBackIn(c, body); w > 0 {
 			d, r.By = w, "resets"
@@ -1754,19 +1760,108 @@ func retryAfter(h http.Header, now time.Time) time.Duration {
 		if d > 0 || len(vs) == 0 || !strings.Contains(k, "reset") || !strings.Contains(k, "ratelimit") {
 			continue
 		}
-		v := vs[0]
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			d = max(d, t.Sub(now))
-		} else if w, err := time.ParseDuration(v); err == nil {
-			d = max(d, w)
-		} else if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 1e9 {
-			d = max(d, time.Unix(n, 0).Sub(now))
-		}
+		d = max(d, resetIn(vs[0], now))
 	}
 	if d <= 0 {
 		return 0
 	}
 	return min(d, longestWait)
+}
+
+// geminiPerDay is a Gemini API refusal of a quota counted by the day: its
+// QuotaFailure's quotaId, "GenerateRequestsPerDayPerProjectPerModel-FreeTier".
+var geminiPerDay = regexp.MustCompile(`"quotaId"\s*:\s*"[^"]*PerDay`)
+
+// geminiDayBackIn is how long until a Gemini API key out of a quota
+// counted by the day has it again: requests per day reset at midnight
+// Pacific time (ai.google.dev/gemini-api/docs/rate-limits). The refusal's
+// own "Please retry in 34s" (RetryInfo) is no word on the day's quota, so
+// a key rested by it, or by the quarter hour of a quota that says nothing
+// (quotaRest), was asked again and refused all day. 0 for anything else.
+func geminiDayBackIn(c candidate, body []byte, now time.Time) time.Duration {
+	if !isGoogle(c.p) || !geminiPerDay.Match(body) {
+		return 0
+	}
+	pt, err := time.LoadLocation("America/Los_Angeles")
+	if err != nil {
+		return 0
+	}
+	n := now.In(pt)
+	return time.Date(n.Year(), n.Month(), n.Day()+1, 0, 0, 0, 0, pt).Sub(now)
+}
+
+// resetIn is how long until a rate limit's reset header says it is back,
+// as the vendors write one: a time (Anthropic's RFC 3339), a wait
+// (OpenAI's "6m0s", "20ms") or Unix seconds; 0 when it says none.
+func resetIn(v string, now time.Time) time.Duration {
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		return t.Sub(now)
+	} else if w, err := time.ParseDuration(v); err == nil {
+		return w
+	} else if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 1e9 {
+		return time.Unix(n, 0).Sub(now)
+	}
+	return 0
+}
+
+// spentRest is the rest a key's answer asks for when it says its rate
+// limit is spent: OpenAI's x-ratelimit-remaining-requests, -tokens or
+// -project-tokens at 0, Anthropic's anthropic-ratelimit-*-remaining at 0.
+// Only OpenAI's and Anthropic's own APIs are read. The key sits out until
+// the reset header of the limit it spent says it is back, so the next
+// request goes to another member at once rather than being refused first
+// (the 429 its next request would get). A limit the
+// answer names no reset for rests nothing; a subscription's windows are
+// read from its allowance instead (full), and Anthropic's unified headers
+// are a subscription's.
+func spentRest(c candidate, h http.Header, now time.Time) (Rest, bool) {
+	if c.p.Account != nil || c.p.LimitRestOff {
+		return Rest{}, false
+	}
+	// read from the vendor's own API only: a relay that passes on what one
+	// of its upstream keys said is no word on the relay's other keys, and
+	// its reset may be written in its own way
+	var named string
+	switch host := c.p.Host(); {
+	case host == "api.openai.com" || strings.HasSuffix(host, ".api.openai.com"):
+		named = "x-ratelimit-"
+	case host == "api.anthropic.com":
+		named = "anthropic-ratelimit-"
+	default:
+		return Rest{}, false
+	}
+	var d time.Duration
+	for k, vs := range h {
+		lk := strings.ToLower(k)
+		if len(vs) == 0 || strings.TrimSpace(vs[0]) != "0" || !strings.HasPrefix(lk, named) ||
+			!strings.Contains(lk, "remaining") || strings.Contains(lk, "unified") {
+			continue
+		}
+		// its reset is named as it is, remaining for reset:
+		// x-ratelimit-reset-tokens, anthropic-ratelimit-tokens-reset
+		d = max(d, resetIn(strings.TrimSpace(h.Get(strings.Replace(lk, "remaining", "reset", 1))), now))
+	}
+	if d <= 0 {
+		return Rest{}, false
+	}
+	d = min(d, longestWait)
+	return Rest{Why: failRate, Status: http.StatusOK, Until: now.Add(d), By: "retry-after", Key: c.restID()}, true
+}
+
+// restIfSpent sets aside a key that just answered with its rate limit
+// spent (spentRest), after servedCandidate woke it. A longer rest it holds
+// already stands.
+func restIfSpent(c candidate, h http.Header) {
+	r, ok := spentRest(c, h, time.Now())
+	if !ok {
+		return
+	}
+	restingUntil.Lock()
+	if r.Until.After(restingUntil.m[r.Key]) {
+		restingUntil.m[r.Key] = r.Until
+		restingUntil.note[r.Key] = r
+	}
+	restingUntil.Unlock()
 }
 
 var allowances = provider.Allowances

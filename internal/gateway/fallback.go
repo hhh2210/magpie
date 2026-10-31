@@ -1954,6 +1954,9 @@ type holdWriter struct {
 	// upstreamKeys are the headers of the vendor's reply heardUpstream put
 	// in header (#4145)
 	upstreamKeys []string
+	// limits are the rate-limit headers of the vendor's reply, passed on
+	// or not (heardLimits)
+	limits http.Header
 }
 
 // onLoop sets what is told of a loop before it ends the reply (reask),

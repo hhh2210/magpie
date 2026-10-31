@@ -15,6 +15,7 @@ import (
 	"context"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/yetone/magpie/internal/provider"
 )
@@ -26,6 +27,9 @@ type replySinkKey struct{}
 type replySink struct {
 	id  string
 	put func(http.Header)
+	// limits, when set, takes the reply's rate-limit headers, passed on
+	// or not, for restIfSpent
+	limits func(http.Header)
 }
 
 // withReplySink is ctx whose requests to the provider id say the headers
@@ -42,6 +46,36 @@ func heardReply(ctx context.Context, p provider.Provider, res *http.Response) {
 		return
 	}
 	s.put(p.PassedReplyHeaders(res.Header))
+	if s.limits != nil {
+		s.limits(rateLimitHeaders(res.Header))
+	}
+}
+
+// withLimitSink is ctx whose reply sink also says its provider's replies'
+// rate-limit headers to limits: what is left of the key's limit, which
+// the agent isn't given unless the provider passes it on.
+func withLimitSink(ctx context.Context, limits func(http.Header)) context.Context {
+	s, ok := ctx.Value(replySinkKey{}).(replySink)
+	if !ok {
+		return ctx
+	}
+	s.limits = limits
+	return context.WithValue(ctx, replySinkKey{}, s)
+}
+
+// rateLimitHeaders are h's headers that say a rate limit (x-ratelimit-*,
+// anthropic-ratelimit-*), nil when there are none.
+func rateLimitHeaders(h http.Header) http.Header {
+	var out http.Header
+	for k, vs := range h {
+		if strings.Contains(strings.ToLower(k), "ratelimit") {
+			if out == nil {
+				out = http.Header{}
+			}
+			out[k] = slices.Clone(vs)
+		}
+	}
+	return out
 }
 
 // passReplyHeaders puts what the vendor's reply res passes on into dst,
@@ -73,6 +107,24 @@ func (h *holdWriter) heardUpstream(got http.Header) {
 		h.header[k] = slices.Clone(vs)
 		h.upstreamKeys = append(h.upstreamKeys, k)
 	}
+}
+
+// heardLimits keeps the rate-limit headers of the try's last reply, as
+// heardUpstream keeps those passed on.
+func (h *holdWriter) heardLimits(got http.Header) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.status != 0 {
+		return
+	}
+	h.limits = got
+}
+
+// rateLimits are the rate-limit headers heardLimits kept.
+func (h *holdWriter) rateLimits() http.Header {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.limits
 }
 
 // heardHeaders keeps the last reply's passed headers, for a try that
