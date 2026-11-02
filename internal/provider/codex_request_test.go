@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/yetone/magpie/internal/codexcat"
+	"github.com/yetone/magpie/internal/settings"
 )
 
 // The conversation goes in the session headers Codex CLI 0.162 sends,
@@ -148,6 +149,39 @@ func TestCodexBodyAsCodexSendsIt(t *testing.T) {
 	json.Unmarshal(out, &m)
 	if m.Instructions != "You are Codex, a coding agent.\nPersonality." || len(m.Input) != 0 {
 		t.Fatalf("%s", out)
+	}
+}
+
+// With CodexOwnInstructions on, the client's instructions are the request's
+// and Codex's stay out; a client that sends none still gets Codex's.
+func TestCodexBodyOwnInstructions(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	dir := t.TempDir()
+	t.Setenv("CODEX_HOME", dir)
+	os.WriteFile(filepath.Join(dir, "models_cache.json"), []byte(`{"models":[{"slug":"gpt-5.5","model_messages":{"instructions_template":"You are Codex, a coding agent.\nMore."}}]}`), 0o644)
+	s := settings.Load()
+	s.CodexOwnInstructions = true
+	if err := settings.Save(s); err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		Instructions string           `json:"instructions"`
+		Input        []map[string]any `json:"input"`
+	}
+	out := codexBody([]byte(`{"model":"gpt-5.5","instructions":"You are Pi.","input":[{"type":"message","role":"user","content":"hi"}]}`))
+	json.Unmarshal(out, &m)
+	if m.Instructions != "You are Pi." || len(m.Input) != 1 || m.Input[0]["role"] != "user" || strings.Contains(string(out), "You are Codex") {
+		t.Fatalf("%s", out)
+	}
+	m.Instructions, m.Input = "", nil
+	out = codexBody([]byte(`{"model":"gpt-5.5","input":[{"type":"message","role":"user","content":"hi"}]}`))
+	json.Unmarshal(out, &m)
+	if m.Instructions != "You are Codex, a coding agent.\nMore." || len(m.Input) != 1 {
+		t.Fatalf("no instructions of its own: %s", out)
 	}
 }
 

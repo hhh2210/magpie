@@ -374,6 +374,13 @@ type Settings struct {
 	// real Claude Code, its billing line and identity line kept; off, as by
 	// default, the run is the shape every Claude Code run has.
 	ClaudeLeanPrompt bool `json:"claudeLeanPrompt,omitempty"`
+	// CodexOwnInstructions sends a ChatGPT (Codex) account's request with
+	// the client's own instructions as its `instructions`, in place of
+	// Codex's (about 4K tokens a request on gpt-6.1-terra), and not as a
+	// developer message. A client that sends none still gets Codex's, which
+	// the backend requires. Off, as by default, every request carries
+	// Codex's instructions, as Codex CLI's does.
+	CodexOwnInstructions bool `json:"codexOwnInstructions,omitempty"`
 	// ClaudePrintMode runs a Claude subscription's Claude Code as `claude
 	// -p` always. Off, as by default, a model request runs in Claude
 	// Code's interactive mode, as a person runs it, and never as -p: the

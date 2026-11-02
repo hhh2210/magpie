@@ -18,6 +18,7 @@ import (
 	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/codexcat"
 	"github.com/yetone/magpie/internal/proc"
+	"github.com/yetone/magpie/internal/settings"
 )
 
 // A ChatGPT account's requests are made the way Codex CLI makes them, as
@@ -309,10 +310,11 @@ func codexBody(body []byte) []byte {
 	}
 
 	// the client's instructions go first as a developer message, Codex's
-	// in their place — unless they are Codex's, from Codex itself
+	// in their place — unless they are Codex's, from Codex itself, or the
+	// user asked for the client's own (CodexOwnInstructions)
 	codex := codexInstructions(model)
 	if strings.TrimSpace(own) != "" {
-		if firstLine(own) == firstLine(codex) {
+		if firstLine(own) == firstLine(codex) || settings.Load().CodexOwnInstructions {
 			codex = own
 		} else {
 			input = append([]any{map[string]any{"type": "message", "role": "developer",
