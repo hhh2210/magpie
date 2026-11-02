@@ -2002,6 +2002,20 @@ the vendor's own too: magpie asks Anthropic's, Copilot's or Codex's API with
 that same sign-in, so a model added upstream appears on the next refresh.
 The ChatGPT backend only streams and rejects a few parameters, so magpie
 translates non-streaming requests and drops what it would refuse.
+A request on a ChatGPT account is also sent with Codex's own instructions,
+as Codex CLI sends them (`codexBody` in
+[`codex_request.go`](../internal/provider/codex_request.go)): the prompt the
+account's model list gives the model, else Codex CLI's
+`models_cache.json`, else Codex's generic prompt
+([`codex_prompt.md`](../internal/codexcat/codex_prompt.md)). The client's
+own system prompt or `instructions` go first in `input`, as a developer
+message; only a request from Codex itself, whose instructions open with the
+same line as Codex's, keeps its own. So every request through `codex/…`
+carries thousands of input tokens the client didn't send, a one-line chat
+request included, and the model reads Codex's instructions beside the
+client's. For work where the exact prompt matters (evaluations,
+experiments, short single-turn tasks), use an OpenAI API key added as an
+ordinary provider: no Codex instructions are added there.
 Claude subscriptions are different: Anthropic classifies another agent's
 system prompt as third-party traffic even when the OAuth request otherwise
 looks like Claude Code. magpie therefore drives the genuine local `claude`
