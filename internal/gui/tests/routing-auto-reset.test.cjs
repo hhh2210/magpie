@@ -21,6 +21,8 @@ const tries = [
    { id: key.id, model: key.model, start: at(0), done: true, status: 200, ms: 400 }],
   // Codex's own sign-in: the one try that answered after it
   [{ id: key.id, model: key.model, start: at(1), done: true, status: 200, ms: 500, reset }],
+  [{ id: key.id, model: key.model, start: at(2), done: true, status: 429, ms: 300, fail: "quota", reset: { who: "GLM plan", agent: "glm", text: "1 window started again" } },
+   { id: key.id, model: key.model, start: at(2), done: true, status: 200, ms: 400 }],
 ];
 const routes = tries.map((tr, i) => ({
   id: 100 - i, seq: 100 - i, time: at(i), agent: "codex", model: "gpt-5.5", provider: "codex",
@@ -93,6 +95,14 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await page.waitForTimeout(300);
       got = await steps();
       assert(got.some((s) => s.startsWith(want[lang].first)), JSON.stringify(got));
+      await page.locator(".rt-req").nth(2).click();
+      const glmSay = lang === "zh"
+        ? "GLM 额度已耗尽。已按授权使用重置卡恢复额度，正在重试请求。"
+        : "GLM quota was exhausted. An opted-in reset card restored it, and the request is retried.";
+      await page.getByText(glmSay, { exact: false }).waitFor();
+      got = await steps();
+      assert(got.some((s) => s.includes(glmSay)), JSON.stringify(got));
+      assert(!got.some((s) => s.includes("GLM plan's Codex")), JSON.stringify(got));
       assert.deepEqual(errors, []);
     });
   }

@@ -427,3 +427,42 @@ real `~/.codex`, `~/.claude`, `~/.config/gcloud` or `~/.config/magpie` files.
 Vertex AI's tests send Vertex AI, Google's token endpoint and IAM Credentials
 to a server of their own (`VertexForTest`). Check a change
 against real accounts in a sandbox HOME, as [Code standards](../code-standards.md#acceptance-criteria) describes.
+
+## Personal GLM plan key auto-reset
+
+`magpie provider auto-reset <id> on|off` opts a single-key personal GLM
+Coding Plan provider into consuming reset cards after all gateway candidates
+are out of quota. It is off by default. The setting follows the exact API
+key and vendor, not its display name; changing the key requires a new opt-in.
+Multi-key configuration, team plans and plugin-served ZCode accounts are not
+configured by this command.
+
+[AutoUseGLMReset](../../internal/provider/glm_autoreset.go) re-reads the
+vendor's personal quota before consuming anything. Weekly exhaustion takes
+priority over five-hour exhaustion; it uses only a matching, available,
+unexpired card, earliest expiry first. It does not substitute a weekly card
+for an exhausted five-hour window and does not spend for MCP limits, custom
+usage caps, expiry alone or a pinned account request. The vendor's weekly
+card resets both windows.
+
+The per-key `glm-auto-reset/<sha256>.json` state holds the opt-in and a
+reservation through the exhausted window's original reset deadline. A file
+lock serializes processes and an atomic write reserves the attempt **before**
+the POST. Read/write/lock failures fail closed. A timeout, rejected POST or
+unconfirmed recovery keeps the reservation, deliberately preferring a missed
+reset to consuming a second card after an uncertain outcome. Toggling the
+setting preserves that reservation. Keys are not stored in this state, and
+Codex's ledgers are untouched. This state is local to the machine; do not
+opt the same key into automated consumption on multiple machines.
+
+After a successful POST, a fresh quota read must confirm recovery before
+routing retries the request. The cached allowance is refreshed and the
+routing trace identifies GLM. No GUI settings switch or expiry scheduler is
+added in this first implementation.
+
+Verification: `TestGLMAutoReset`, `TestGLMAutoResetCLI`, and
+`TestGLMAutoResetRequest` cover consumption guards, persistent reservations,
+CLI opt-in and the gateway's exhausted-request → reset → successful-retry
+path with a fake vendor. The real BigModel API-key manual spend was verified
+on 2026-11-05; an automatic spend against a real exhausted account remains
+unverified.

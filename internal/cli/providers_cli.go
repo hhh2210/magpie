@@ -105,6 +105,7 @@ const providerUsage = `usage:
                                           how many of its accounts or keys take requests at the same time, the first
                                           in the list; the next takes over when one runs out or fails (off: no limit,
                                           default: what its plugin says)
+  magpie provider auto-reset <id> [on|off]  opt in a single personal GLM plan key to automatic reset-card use
   magpie provider quota-rest <id> [30m|6h|7d|until 08:00|until 00:00+08:00|default]
                                           how long a key sits out once the vendor says it is out of its allowance
                                           without saying when it is back (default: 15 minutes; at most 8 days),
@@ -651,6 +652,8 @@ func providerCmd(args []string) error {
 		return refreshEveryCmd(rest)
 	case "auto-include":
 		return autoIncludeCmd(rest)
+	case "auto-reset":
+		return glmAutoResetCmd(rest)
 	case "quota-rest":
 		return quotaRestCmd(rest)
 	case "rest-cap":
