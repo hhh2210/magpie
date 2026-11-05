@@ -2805,7 +2805,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		if pick, out, ok := s.autoReset(r.Context(), nil, pl.held[0], pl.held); ok {
 			cands = []candidate{pick}
 			pl.order, pl.left = unhold(pl.order, pl.left, pick)
-			resetFirst = &AutoReset{Who: pick.p.Account.User, Text: out.Text(), Agent: pick.p.Account.Agent}
+			resetFirst = resetTrace(pick, out)
 		}
 	}
 	if len(cands) == 0 && (strictHeld != nil || slices.ContainsFunc(pl.left, func(w Weighed) bool { return w.Capped > 0 }) &&
@@ -4736,7 +4736,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 			autoReset = true
 			if pick, out, ok := s.autoReset(r.Context(), all, c, pl.held); ok {
 				try.Fail = failQuota
-				try.Reset = &AutoReset{Who: pick.p.Account.User, Text: out.Text(), Agent: pick.p.Account.Agent}
+				try.Reset = resetTrace(pick, out)
 				s.trace.update(tr, func(t *Route) {
 					t.Tries[len(t.Tries)-1] = try
 					t.Order, t.Left = unhold(t.Order, t.Left, pick)

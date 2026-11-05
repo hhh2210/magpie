@@ -41,6 +41,20 @@ func (s *Server) autoReset(ctx context.Context, cands []candidate, c candidate, 
 	}
 	seen := map[string]bool{}
 	for _, x := range append(append([]candidate{c}, cands...), held...) {
+		if x.p.Account == nil && !seen[x.restKey()] {
+			seen[x.restKey()] = true
+			resetCtx, cancel := context.WithTimeout(ctx, autoResetTimeout)
+			out, err := provider.AutoUseGLMReset(resetCtx, x.p)
+			cancel()
+			if err != nil {
+				log.Printf("GLM auto-reset for %s: %v", x.p.ID, err)
+			}
+			if err == nil && out.Code == "reset" {
+				s.Unrest(x.restKey())
+				s.Unrest(x.restID())
+				return x, out, true
+			}
+		}
 		a := x.p.Account
 		if a == nil || a.User == "" || seen[x.restKey()] || !provider.AutoResetsWeek(a.Agent, a.User) {
 			continue
@@ -142,4 +156,12 @@ func (s *Server) resetBeforeCreditsOn(ctx context.Context, on *provider.Provider
 		s.Unrest("codex@" + strings.ToLower(who))
 	}
 	return who, out, ok
+}
+
+// resetTrace names a provider key without assuming it is a signed-in account.
+func resetTrace(c candidate, out provider.ResetOutcome) *AutoReset {
+	if a := c.p.Account; a != nil {
+		return &AutoReset{Who: a.User, Agent: a.Agent, Text: out.Text()}
+	}
+	return &AutoReset{Who: c.p.Name, Agent: "glm", Text: out.Text()}
 }

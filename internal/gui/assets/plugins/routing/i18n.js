@@ -2,6 +2,7 @@
 // kernel adds them to i18n.js's (magpie.strings).
 magpie.strings({
   zh: {
+    "GLM quota was exhausted. An opted-in reset card restored it, and the request is retried.": "GLM 额度已耗尽。已按授权使用重置卡恢复额度，正在重试请求。",
     "sign-in refused (answered since)": "登录曾被拒（之后已应答）",
     "Free first uses it before paid ones, and Cheapest first counts it as costing nothing": "免费优先会先用它再用付费的，最便宜优先把它算作不花钱",
     "{name}, {n} accounts: {windows}": "{name}（{n} 个账号）：{windows}",
@@ -669,6 +670,7 @@ magpie.strings({
     "This group may spend every account of {provider}": "这个组可以消耗 {provider} 的每个账号",
   },
   "zh-TW": {
+    "GLM quota was exhausted. An opted-in reset card restored it, and the request is retried.": "GLM 額度已耗盡。已按授權使用重置卡恢復額度，正在重試請求。",
     "sign-in refused (answered since)": "登入曾被拒（之後已應答）",
     "Free first uses it before paid ones, and Cheapest first counts it as costing nothing": "免費優先會先用它再用付費的，最便宜優先把它算作不花錢",
     "{name}, {n} accounts: {windows}": "{name}（{n} 個帳號）：{windows}",
@@ -1336,6 +1338,7 @@ magpie.strings({
     "This group may spend every account of {provider}": "這個組可以消耗 {provider} 的每個帳號",
   },
   ja: {
+    "GLM quota was exhausted. An opted-in reset card restored it, and the request is retried.": "GLM の上限に達しました。有効にしたリセットカードで枠を回復し、リクエストを再試行します。",
     "sign-in refused (answered since)": "サインイン拒否（その後は応答あり）",
     "Free first uses it before paid ones, and Cheapest first counts it as costing nothing": "無料優先は有料より先にこれを使い、最安優先はこれを費用ゼロとして数えます",
     "{name}, {n} accounts: {windows}": "{name}（{n} アカウント）：{windows}",
@@ -2003,6 +2006,7 @@ magpie.strings({
     "This group may spend every account of {provider}": "このグループは {provider} のすべてのアカウントを使えます",
   },
   de: {
+    "GLM quota was exhausted. An opted-in reset card restored it, and the request is retried.": "Das GLM-Kontingent war aufgebraucht. Eine freigegebene Reset-Karte hat es wiederhergestellt; die Anfrage wird wiederholt.",
     "sign-in refused (answered since)": "Anmeldung abgelehnt (seitdem beantwortet)",
     "Free first uses it before paid ones, and Cheapest first counts it as costing nothing": "„Kostenlos zuerst“ nutzt es vor bezahlten, „Günstigste zuerst“ zählt es als kostenlos",
     "{name}, {n} accounts: {windows}": "{name}, {n} Konten: {windows}",
