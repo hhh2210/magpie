@@ -2,6 +2,7 @@ package provider
 
 import (
 	"encoding/json"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -25,7 +26,7 @@ func TestPluginFreeModelCostsNothing(t *testing.T) {
 	// models.dev as it has them (2026-10-15): Anthropic's Opus 5.5, and
 	// Cognition's SWE models nowhere
 	os.WriteFile(catalog.CachePath(), []byte(`{
-	  "anthropic":{"id":"anthropic","models":{"claude-opus-5-5":{"id":"claude-opus-5-5","cost":{"input":4,"output":20,"cache_read":0.2,"cache_write":5}}}}}`), 0o644)
+	  "anthropic":{"id":"anthropic","models":{"claude-opus-5-5":{"id":"claude-opus-5-5","cost":{"input":4,"output":20,"cache_read":0.2,"cache_write":5}},"claude-opus-5-5-estimate":{"id":"claude-opus-5-5-estimate","cost":{"input":4,"output":20}}}}}`), 0o644)
 	catalog.Reset()
 	t.Cleanup(catalog.Reset)
 	spec := "@magpie-community/opencode-devin-auth"
@@ -49,6 +50,8 @@ func TestPluginFreeModelCostsNothing(t *testing.T) {
 			{"id": "swe-2", "name": "SWE-2", "free": true, "cost": {"input": 0, "output": 0, "cache": {"read": 0, "write": 0}}},
 			{"id": "swe-1.7-lightning", "name": "SWE-1.7 Lightning", "cost": {"input": 2.5, "output": 12.5, "cache": {"read": 1, "write": 0}}},
 			{"id": "swe-1-6", "name": "SWE-1.6", "cost": {"input": 0, "output": 0, "cache": {"read": 0, "write": 0}}},
+			{"id": "gemini-3.1-pro-preview-search", "cost": {"input": 2, "output": 12, "cache": {"read": 0.2}, "tiers": [{"above": 200000, "input": 4, "output": 18, "cache_read": 0.4}]}},
+			{"id": "claude-opus-5-5-estimate", "apiId": "claude-opus-5-5-estimate", "cost": {"preferred": true, "input": 5, "output": 25, "cache": {"read": 0.5}}},
 			{"id": "claude-opus-5-5", "name": "Claude Opus 5.5", "cost": {"input": 5, "output": 25, "cache": {"read": 0.5, "write": 0}}}]`),
 	}})
 	t.Cleanup(func() { plugin.UseCached(nil) })
@@ -66,9 +69,33 @@ func TestPluginFreeModelCostsNothing(t *testing.T) {
 	if pr, ok := EffectivePrice("devin", "swe-1-6"); ok {
 		t.Errorf("swe-1-6: %+v, priced; the plugin gives it no price and doesn't say it is free", pr)
 	}
+	if pr, ok := EffectivePrice("devin", "gemini-3.1-pro-preview-search"); !ok {
+		t.Fatal("plugin's search variant has no price")
+	} else {
+		for _, input := range []int{200000, 200001} {
+			want := (float64(input-100000)*2 + 100000*0.2 + 2500*12) / 1e6
+			if input > 200000 {
+				want = (float64(input-100000)*4 + 100000*0.4 + 2500*18) / 1e6
+			}
+			if got := pr.CostSplit(input-100000, 2500, 100000, 0, 0); math.Abs(got-want) > 1e-12 {
+				t.Fatalf("input=%d: cost=%g want=%g", input, got, want)
+			}
+		}
+	}
 	// a catalog's price is kept over the plugin's
 	if pr, ok := EffectivePrice("devin", "claude-opus-5-5"); !ok || pr.Input != 4 || pr.Output != 20 {
 		t.Errorf("claude-opus-5-5: %+v, %v; want Anthropic's $4/$20", pr, ok)
+	}
+	if pr, ok := EffectivePrice("devin", "claude-opus-5-5-estimate"); !ok || pr.Input != 5 || pr.Output != 25 {
+		t.Fatalf("preferred plugin price = %+v, %v; want $5/$25 before maker's $4/$20", pr, ok)
+	}
+	s := settings.Load()
+	s.ModelPrices = map[string]settings.ModelPrice{"devin/claude-opus-5-5-estimate": {Input: new(0.0), Output: new(0.0), CacheRead: new(0.0), CacheWrite: new(0.0)}}
+	if err := settings.Save(s); err != nil {
+		t.Fatal(err)
+	}
+	if pr, ok := EffectivePrice("devin", "claude-opus-5-5-estimate"); !ok || pr.Input != 0 || pr.Output != 0 {
+		t.Fatalf("user's zero must override preferred plugin price: %+v, %v", pr, ok)
 	}
 	// another provider's model of the same id isn't the plugin's
 	if pr, ok := EffectivePrice("anthropic", "swe-2"); ok {

@@ -2441,6 +2441,9 @@ func (p Provider) listPriceIn(c priceCats, model string) (catalog.Price, bool, i
 	if pr, ok := p.openDesignSamePrice(model); ok {
 		return pr, true, pricedOwn
 	}
+	if pr, ok := p.pluginListPrice(model, true); ok {
+		return pr, true, pricedOwn
+	}
 	// the names on the stack: made for each model priced, they were
 	// 1.5 MB of forty Providers asks
 	var buf [4]string
@@ -2462,7 +2465,7 @@ func (p Provider) listPriceIn(c priceCats, model string) (catalog.Price, bool, i
 	if pr, ok := p.vendorListPrice(model); ok {
 		return pr, true, pricedOwn
 	}
-	if pr, ok := p.pluginListPrice(model); ok {
+	if pr, ok := p.pluginListPrice(model, false); ok {
 		return pr, true, pricedOwn
 	}
 	if p.pluginFree(model) {
@@ -2517,15 +2520,16 @@ func (p Provider) vendorListPrice(model string) (catalog.Price, bool) {
 
 // pluginListPrice is the price the plugin serving p lists model at
 // (pluginPrice): Devin's own, from GetCliModelConfigs, for its SWE models
-// that no catalog has. Only where no catalog prices the model, as with
-// pluginFree, so no price a catalog gave changes.
-func (p Provider) pluginListPrice(model string) (catalog.Price, bool) {
+// that no catalog has. preferredOnly asks for the plugin's explicit
+// price preference before looking in catalogs; other plugins keep their
+// rates as a fallback. User-set prices stand before either path.
+func (p Provider) pluginListPrice(model string, preferredOnly bool) (catalog.Price, bool) {
 	pp, ok := PluginOf(p.ID)
 	if !ok {
 		return catalog.Price{}, false
 	}
 	m, ok := pluginModel(pp, model)
-	if !ok {
+	if !ok || preferredOnly && (m.Cost == nil || !m.Cost.Preferred) {
 		return catalog.Price{}, false
 	}
 	return pluginPrice(m)
