@@ -1482,7 +1482,7 @@ async function loadPlugins(list) {
     // magpie's own (OpenCode has none): the plugin's options as the user
     // set them in magpie, read when wanted, so a change reaches the
     // plugin without a restart (#2038)
-    magpie: { option: optionValue, options: optionValues, load: reportLoad, usage: reportUsage, account: keyFor },
+    magpie: { option: optionValue, options: optionValues, load: reportLoad, usage: reportUsage, account: keyFor, capabilities: { modelCost: 1 } },
   }
   // pi's packages and extensions are loaded as pi loads them (pi.js)
   let pi
@@ -2080,11 +2080,21 @@ function mdev() {
 }
 
 function cost(c) {
-  return {
+  const base = {
+    preferred: c?.preferred === true,
     input: c?.input ?? 0,
     output: c?.output ?? 0,
     cache: { read: c?.cache_read ?? c?.cache?.read ?? 0, write: c?.cache_write ?? c?.cache?.write ?? 0 },
   }
+  // Context tiers use the catalog's USD/1M shape; omitted rates inherit
+  // the base, while zero is an explicit rate (including free cache reads).
+  if (Array.isArray(c?.tiers)) base.tiers = c.tiers.flatMap((t) => {
+    if (!Number.isSafeInteger(t?.above) || t.above <= 0) return []
+    const p = { above: t.above, input: t.input ?? base.input, output: t.output ?? base.output,
+      cache_read: t.cache_read ?? t.cache?.read ?? base.cache.read, cache_write: t.cache_write ?? t.cache?.write ?? base.cache.write }
+    return Object.values(p).every((v) => typeof v === "number" && Number.isFinite(v) && v >= 0) ? [p] : []
+  }).sort((a, b) => a.above - b.above)
+  return base
 }
 
 // MODALITIES are the kinds of input and output OpenCode's capabilities
@@ -2681,7 +2691,7 @@ function rowOf(id, a, keys, stored, p, own) {
         // to magpie as nothing, which keeps them (#2492)
         ...(typeof m.temperature === "boolean" ? { temperature: m.temperature } : {}),
         released: m.release_date ?? "",
-        cost: m.cost,
+        cost: cost(m.cost),
         variants: Object.keys(m.variants ?? {}),
         free: m.free === true,
         // what a request costs of the plan's credits, as a multiple,

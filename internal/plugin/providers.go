@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/filememo"
 	"github.com/yetone/magpie/internal/lastgood"
 	"github.com/yetone/magpie/internal/settings"
@@ -60,9 +61,12 @@ func (m Method) KeyTitle(name string) string {
 // Cost is a model's price as a plugin gives it: OpenCode's cost, in USD
 // per 1M tokens, 0 where it gives none.
 type Cost struct {
-	Input  float64 `json:"input"`
-	Output float64 `json:"output"`
-	Cache  struct {
+	// Preferred selects the plugin's rates before the public catalogs.
+	Preferred bool           `json:"preferred,omitempty"`
+	Tiers     []catalog.Tier `json:"tiers,omitempty"`
+	Input     float64        `json:"input"`
+	Output    float64        `json:"output"`
+	Cache     struct {
 		Read  float64 `json:"read"`
 		Write float64 `json:"write"`
 	} `json:"cache"`

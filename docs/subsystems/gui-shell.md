@@ -42,6 +42,13 @@ three.
 
 ## Constraints and failure behavior
 
+Cost rankings in Usage and the tray panel preserve each group's `unpriced`
+count, including the folded Other row. `drawLedRank` shows `—` and no cost
+share bar or percentage when all cost is unknown, and `+` after partially
+priced totals. A known zero price remains `$0.000`. The hover text gives the
+unpriced request count. `usage-ledger-chart.test.cjs` covers both ranking
+layouts in all five languages; `panel-usage.test.cjs` covers the panel path.
+
 ### First opening of an agent's Details
 
 In the main window, `expandLink` in

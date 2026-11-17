@@ -465,7 +465,7 @@ func pluginPrice(m plugin.Model) (catalog.Price, bool) {
 	if m.Cost == nil || (m.Cost.Input <= 0 && m.Cost.Output <= 0) {
 		return catalog.Price{}, false
 	}
-	return catalog.Price{Input: m.Cost.Input, Output: m.Cost.Output, CacheRead: m.Cost.Cache.Read, CacheWrite: m.Cost.Cache.Write}, true
+	return catalog.Price{Input: m.Cost.Input, Output: m.Cost.Output, CacheRead: m.Cost.Cache.Read, CacheWrite: m.Cost.Cache.Write, Tiers: m.Cost.Tiers}, true
 }
 
 // pluginAccountCatalog is what the account at key serves: its own list

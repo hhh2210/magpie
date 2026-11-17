@@ -155,3 +155,20 @@ magpie.plugin("usage", (ctx) => {
     leave() { if (usageTab === "requests") ledLeave(true); },
   });
 });
+
+// a ranking that scrolls fades out at the edge with more beyond it, and its
+// rail (the window's) shows how much there is and where it is scrolled to
+function ledRankEdges(box) {
+  const end = box.scrollHeight - box.clientHeight;
+  box.classList.toggle("more-above", end > 1 && box.scrollTop > 1);
+  box.classList.toggle("more-below", end > 1 && box.scrollTop < end - 1);
+  const rail = box.rail;
+  if (!rail) return;
+  rail.hidden = !(end > 1) || !box.offsetParent;
+  if (rail.hidden) return;
+  const h = box.clientHeight, thumb = Math.max(24, (h * h) / box.scrollHeight);
+  rail.style.top = box.offsetTop + "px";
+  rail.style.height = h + "px";
+  rail.firstChild.style.height = thumb + "px";
+  rail.firstChild.style.transform = `translateY(${((h - thumb) * box.scrollTop) / end}px)`;
+}

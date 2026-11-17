@@ -227,6 +227,26 @@ An account signed out while one of its hooks runs stays signed out. A hook that 
 
 ## A model's free and rate
 
+The plugin input advertises `magpie.capabilities.modelCost: 1` when the host
+supports preferred prices and context tiers together. Plugins can retain their
+legacy prices when that capability is absent, avoiding flat-price estimates on
+older hosts. A plugin model's `cost` is USD per million tokens: `input`, `output`,
+`cache.read` and `cache.write`. Optional `tiers` use the catalog's
+`{above, input, output, cache_read, cache_write}` shape, lowest threshold
+first; the whole request uses a tier once its prompt, cached tokens included,
+strictly exceeds `above`. Omitted tier rates inherit the base; zero stays zero.
+The host carries these through [`plugin.Cost`](../../internal/plugin/providers.go)
+and [`pluginPrice`](../../internal/provider/plugins.go) into the existing
+catalog calculator. `cost.preferred: true` selects these rates before public
+catalog rates, for a provider publishing its own prices or API-equivalent
+estimates (AI Studio's backend ledger). User-set prices still win. Without
+that opt-in the public catalogs retain precedence, and an all-zero plugin
+cost still means no price supplied. Usage fingerprints the plugin's model
+prices, including preference and tiers, so a refresh reprices historical
+summaries and request rows without rewriting their log. Verification:
+`TestPluginCostTiers`, `TestPluginFreeModelCostsNothing` and
+`TestPluginPriceRefreshRepricesHistory`.
+
 magpie never reads `free` from `rate`: `rate` 0 is none given (`plugin.Model.Rate` in [`providers.go`](../../internal/plugin/providers.go)), and a model is free only by its own `free: true`, a $0 list price or the user counting its whole provider free (`Provider.CountFree`) (`FreeModel` in [`models.go`](../../internal/provider/models.go)). A plugin sets `free` from the vendor's word; the guide says so ([magpie-community/plugins#468](https://github.com/magpie-community/plugins/issues/468)).
 
 ## A model that gives no text

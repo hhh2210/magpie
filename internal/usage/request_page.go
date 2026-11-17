@@ -859,6 +859,17 @@ func statKey(path string) string {
 // save dropped every chunk and summary built on it. A list that can't be
 // read is named by its stat, as before.
 func liveListKey(id string) string {
+	// Plugin models live in the host's list, not a catalog live file.
+	// Price preferences and tiers can reprice an unchanged request log.
+	if pp, ok := provider.PluginOf(id); ok {
+		h := sha256.New()
+		enc := json.NewEncoder(h)
+		for _, m := range pp.Models {
+			fmt.Fprintf(h, "%q:%q:%t;", m.ID, m.APIID, m.Free)
+			_ = enc.Encode(m.Cost)
+		}
+		return fmt.Sprintf("plugin:%x", h.Sum(nil))
+	}
 	p := catalog.LivePath(id)
 	if k, ok := catalog.LiveKey(id); ok {
 		return p + ":" + k
