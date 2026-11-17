@@ -16,7 +16,7 @@ const path = require("node:path");
 const { test } = require("node:test");
 const { chromium, webkit } = require("playwright");
 
-const assets = path.resolve(__dirname, "../assets");
+const assets = path.resolve(process.env.MAGPIE_ASSETS || path.join(__dirname, "../assets"));
 const midnight = new Date();
 midnight.setHours(0, 0, 0, 0);
 
@@ -139,7 +139,7 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       await p.route("**/*", server(lang, theme, variant, asked, exported));
       await p.goto("http://magpie.test/");
       await p.locator('[data-view="usage"]').first().click();
-      await p.locator(":is(#usageTab .opt, .nav-s):visible").nth(1).click();
+      if (!(await p.locator("#ledWrap").isVisible())) await p.locator(":is(#usageTab .opt, .nav-s):visible").nth(1).click();
       if (variant !== "none") await p.locator("#ledRank .rk").first().waitFor();
       if (["many", "unpriced"].includes(variant)) await p.locator("#ledSplit .opt").nth(SPLIT.provider).click();
       return { p, errors, asked, exported, context };
@@ -149,6 +149,35 @@ for (const engine of (process.env.BROWSER ? [process.env.BROWSER] : ["chromium",
       assert(asked.length && want(asked.at(-1)), "asked: " + (asked.at(-1) || ""));
     };
     const names = (p) => p.locator("#ledRank .rk .rk-nm").allTextContents();
+
+    for (const lang of ["en", "zh", "zh-TW", "ja", "de"]) await t.test(lang + ": ranked costs preserve unknown and partial prices", async () => {
+      const { p, context, errors } = await open(lang, "light");
+      try {
+        for (const compact of [false, true]) {
+          const result = await p.evaluate((compact) => {
+            const row = (id, cost, unpriced = 0) => ({ id, name: id, calls: 4, input: 100, output: 20, cost, unpriced });
+            const draw = (rows) => {
+              const box = document.querySelector("#ledRank");
+              drawLedRank(box, { by: { provider: rows } }, "provider", "cost", "", () => {}, compact);
+              return [...box.querySelectorAll(".rk")].map(b => ({ name: b.querySelector(".rk-nm").textContent, value: b.querySelector(".rk-val").textContent,
+                title: b.querySelector(".rk-val").title, hidden: getComputedStyle(b.querySelector(".rk-bar i")).display === "none", detail: b.querySelector(".rk-b").textContent }));
+            };
+            return { rows: draw([row("unknown", 0, 3), row("partial", 0.65, 1), row("free-rate", 0)]),
+              other: draw([...Array.from({ length: LED_SHOWN }, (_, i) => row("priced-" + i, 10)), row("unknown-a", 0, 2), row("unknown-b", 0, 1)]).at(-1),
+              mixed: draw([...Array.from({ length: LED_SHOWN }, (_, i) => row("priced-" + i, 10)), row("partial", 0.65, 1), row("unknown", 0, 2)]).at(-1),
+              one: t("{n} call unpriced", { n: 1 }), three: t("{n} calls unpriced", { n: 3 }) };
+          }, compact);
+          const unknown = result.rows.find(r => r.name === "unknown"), partial = result.rows.find(r => r.name === "partial"), free = result.rows.find(r => r.name === "free-rate");
+          for (const row of [unknown, result.other]) {
+            assert.equal(row.value, "—"); assert.equal(row.title, result.three); assert(row.hidden); assert(!row.detail.split(" · ").includes("0%"));
+          }
+          assert.equal(partial.value, "$0.650+"); assert.equal(partial.title, result.one);
+          assert.equal(result.mixed.value, "$0.650+"); assert.equal(result.mixed.title, result.three);
+          assert.equal(free.value, "$0.000"); assert(!free.hidden);
+        }
+        assert.deepEqual(errors, []);
+      } finally { await context.close(); }
+    });
 
     for (const lang of ["en", "zh"]) {
       const w = L[lang];

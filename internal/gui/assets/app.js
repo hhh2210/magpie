@@ -19182,12 +19182,14 @@ function drawLedRank(box, l, split, metric, picked, choose, compact) {
     if (x.icon && split !== "model") l1.append(icon(x.icon));
     const nm = el("span", "rk-nm", t(x.name || x.id || "—"));
     nm.title = t(x.name || x.id || "");
-    const prov = ledProv(l, split, x.id), long = ledFormatLong(metric, v, prov), val = el("span", "rk-val", metric == "speed" ? gs?.text || "—" : metric == "cost" || metric == "traffic" ? long : ledFormat(metric, v));
-    val.title = metric == "speed" ? gs?.title || "" : long;
+    const unknown = metric === "cost" && x.unpriced && !x.cost;
+    const prov = ledProv(l, split, x.id), long = metric === "cost" ? fmtCost(x, prov) || "—" : ledFormatLong(metric, v, prov), val = el("span", "rk-val", metric == "speed" ? gs?.text || "—" : metric == "cost" || metric == "traffic" ? long : ledFormat(metric, v));
+    val.title = metric === "cost" && x.unpriced ? t(x.unpriced === 1 ? "{n} call unpriced" : "{n} calls unpriced", { n: x.unpriced }) : metric == "speed" ? gs?.title || "" : long;
     l1.append(nm, val);
     const bar = el("div", "rk-bar"), fill = el("i");
     fill.style.width = Math.max(1.5, (100 * v) / leader).toFixed(1) + "%";
     fill.style.background = color;
+    fill.hidden = !!unknown;
     bar.append(fill);
     const more = [];
     if (metric === "traffic") more.push("↑ " + fmtBytes(x.up_bytes || 0) + " · ↓ " + fmtBytes(x.down_bytes || 0));
@@ -19201,7 +19203,7 @@ function drawLedRank(box, l, split, metric, picked, choose, compact) {
     const hit = cacheHitOf(x);
     if (hit !== null && !compact) more.push(t("hit rate {p}", { p: hitPct(hit) }));
     // a speed is no one's share of all
-    if (metric !== "speed") more.push(Math.round((100 * v) / sum) + "%");
+    if (metric !== "speed" && !unknown) more.push(Math.round((100 * v) / sum) + "%");
     const l2 = el("div", "rk-b");
     more.forEach((m, i) => l2.append(...(i ? [" · ", m] : [m])));
     if (x.errors) l2.append(" · ", Object.assign(el("span", "rk-bad"), { textContent: t("{n} failed", { n: x.errors }) }));
@@ -19216,7 +19218,7 @@ function drawLedRank(box, l, split, metric, picked, choose, compact) {
   for (const x of top) box.append(one(x, x.color));
   if (rest.length) {
     const tot = rest.reduce((acc, x) => {
-      for (const k of ["calls", "errors", "loops", "input", "output", "cache_read", "cache_write", "cache_unknown", "cache_unknown_calls", "cost", "credits", "credited", "timed", "ttft_ms", "decode_ms", "decode_out", "decode_n", "floor_out", "floor_ms", "floor_n", "up_bytes", "down_bytes"]) acc[k] = (acc[k] || 0) + (x[k] || 0);
+      for (const k of ["calls", "errors", "loops", "input", "output", "cache_read", "cache_write", "cache_unknown", "cache_unknown_calls", "cost", "unpriced", "credits", "credited", "timed", "ttft_ms", "decode_ms", "decode_out", "decode_n", "floor_out", "floor_ms", "floor_n", "up_bytes", "down_bytes"]) acc[k] = (acc[k] || 0) + (x[k] || 0);
       return acc;
     }, { id: "\0other", name: t("Other ({n})", { n: rest.length }) });
     box.append(one(tot, "var(--faint)", true));
@@ -19226,22 +19228,6 @@ function drawLedRank(box, l, split, metric, picked, choose, compact) {
   ledRankEdges(box);
 }
 
-// a ranking that scrolls fades out at the edge with more beyond it, and its
-// rail (the window's) shows how much there is and where it is scrolled to
-function ledRankEdges(box) {
-  const end = box.scrollHeight - box.clientHeight;
-  box.classList.toggle("more-above", end > 1 && box.scrollTop > 1);
-  box.classList.toggle("more-below", end > 1 && box.scrollTop < end - 1);
-  const rail = box.rail;
-  if (!rail) return;
-  rail.hidden = !(end > 1) || !box.offsetParent;
-  if (rail.hidden) return;
-  const h = box.clientHeight, thumb = Math.max(24, (h * h) / box.scrollHeight);
-  rail.style.top = box.offsetTop + "px";
-  rail.style.height = h + "px";
-  rail.firstChild.style.height = thumb + "px";
-  rail.firstChild.style.transform = `translateY(${((h - thumb) * box.scrollTop) / end}px)`;
-}
 
 let quotaFocus = ""; // pending provider/account card requested by the menu bar
 let quotaFocusUntil = 0; // expire before a late quota response can move the reader
